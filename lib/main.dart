@@ -472,14 +472,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           begin: Alignment.topLeft, end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _enabled && _hasPerms ? kSuccess.withOpacity(0.4) : kBorder),
+                        border: Border.all(color: _enabled && _hasPerms ? kSuccess.withValues(alpha: 0.4) : kBorder),
                       ),
                       child: Row(
                         children: [
                           Container(
                             width: 52, height: 52,
                             decoration: BoxDecoration(
-                              color: (_enabled && _hasPerms ? kSuccess : kMuted).withOpacity(0.15),
+                              color: (_enabled && _hasPerms ? kSuccess : kMuted).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(26),
                             ),
                             child: Icon(
@@ -512,8 +512,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Switch(
                             value: _enabled,
                             onChanged: (_) => _toggleEnabled(),
-                            activeColor: kSuccess,
-                            activeTrackColor: kSuccess.withOpacity(0.3),
+                            activeThumbColor: kSuccess,
+                            activeTrackColor: kSuccess.withValues(alpha: 0.3),
                           ),
                         ],
                       ),
@@ -540,7 +540,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       decoration: BoxDecoration(
                         color: const Color(0xFF0F1E2D),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
+                        border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         children: [
@@ -641,7 +641,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _alertCard({required Color color, required Color bgColor, required IconData icon, required String title, required String body, Widget? action}) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withOpacity(0.5))),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withValues(alpha: 0.5))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -652,7 +652,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: color, fontSize: 13)),
               Text(body, style: const TextStyle(fontSize: 12, color: kMuted)),
-              if (action != null) action,
+              ?action,
             ],
           )),
         ],
@@ -765,7 +765,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (_saved)
               Container(
                 width: double.infinity, padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: const Color(0xFF0F2D1A), borderRadius: BorderRadius.circular(8), border: Border.all(color: kSuccess.withOpacity(0.5))),
+                decoration: BoxDecoration(color: const Color(0xFF0F2D1A), borderRadius: BorderRadius.circular(8), border: Border.all(color: kSuccess.withValues(alpha: 0.5))),
                 child: const Text('✅ Settings save হয়েছে!', style: TextStyle(color: kSuccess, fontSize: 13)),
               ),
             const Text('Worker Configuration', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
@@ -805,7 +805,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: _testSuccess ? const Color(0xFF0F2D1A) : const Color(0xFF2D1212), borderRadius: BorderRadius.circular(8), border: Border.all(color: (_testSuccess ? kSuccess : kDanger).withOpacity(0.5))),
+                decoration: BoxDecoration(color: _testSuccess ? const Color(0xFF0F2D1A) : const Color(0xFF2D1212), borderRadius: BorderRadius.circular(8), border: Border.all(color: (_testSuccess ? kSuccess : kDanger).withValues(alpha: 0.5))),
                 child: Text(_testResult, style: TextStyle(fontSize: 12, color: _testSuccess ? kSuccess : const Color(0xFFFCA5A5))),
               ),
             ],
