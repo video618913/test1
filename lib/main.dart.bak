@@ -83,7 +83,7 @@ class _SetupScreenState extends State<SetupScreen> {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
     if (url.isEmpty || key.isEmpty) {
-      setState(() { _testResult = 'Worker URL এবং API Key দিন।'; _testSuccess = false; });
+      setState(() { _testResult = 'Please enter Worker URL and API Key.'; _testSuccess = false; });
       return;
     }
     setState(() { _testing = true; _testResult = ''; });
@@ -99,14 +99,14 @@ class _SetupScreenState extends State<SetupScreen> {
       ).timeout(const Duration(seconds: 15));
 
       if (res.statusCode == 200 || res.statusCode == 201) {
-        setState(() { _testResult = '✅ সংযোগ সফল! Worker সঠিকভাবে কাজ করছে।'; _testSuccess = true; });
+        setState(() { _testResult = '✅ Connection successful! Worker is running correctly.'; _testSuccess = true; });
       } else if (res.statusCode == 401) {
-        setState(() { _testResult = '❌ API Key ভুল।'; _testSuccess = false; });
+        setState(() { _testResult = '❌ Invalid API Key.'; _testSuccess = false; });
       } else {
         setState(() { _testResult = '⚠️ Server response: ${res.statusCode}'; _testSuccess = false; });
       }
     } on TimeoutException {
-      setState(() { _testResult = '❌ Timeout। URL চেক করুন।'; _testSuccess = false; });
+      setState(() { _testResult = '❌ Timeout. Please check the URL.'; _testSuccess = false; });
     } catch (e) {
       setState(() { _testResult = '❌ Error: ${e.toString().substring(0, e.toString().length.clamp(0, 80))}'; _testSuccess = false; });
     }
@@ -116,9 +116,9 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _saveAndContinue() async {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
-    if (url.isEmpty) { _showSnack('Worker URL দিন'); return; }
-    if (key.isEmpty) { _showSnack('API Key দিন'); return; }
-    if (!url.startsWith('http')) { _showSnack('URL https:// দিয়ে শুরু হওয়া উচিত'); return; }
+    if (url.isEmpty) { _showSnack('Please enter Worker URL'); return; }
+    if (key.isEmpty) { _showSnack('Please enter API Key'); return; }
+    if (!url.startsWith('http')) { _showSnack('URL must start with https://'); return; }
 
     setState(() => _saving = true);
     await _requestPermissions();
@@ -129,7 +129,6 @@ class _SetupScreenState extends State<SetupScreen> {
     await prefs.setBool(kEnabled, true);
     await prefs.setBool(kSetupDone, true);
 
-    // Foreground Service চালু করো
     try { await _smsChannel.invokeMethod('startService'); } catch (_) {}
 
     if (mounted) {
@@ -180,15 +179,15 @@ class _SetupScreenState extends State<SetupScreen> {
               const SizedBox(height: 32),
               _infoCard(
                 icon: Icons.info_outline, color: kPrimary,
-                title: 'প্রথমবার Setup',
-                body: 'এই app আপনার bKash SMS গুলো স্বয়ংক্রিয়ভাবে আপনার Cloudflare Worker-এ forward করবে।',
+                title: 'Initial Setup',
+                body: 'This app will automatically forward your bKash SMS messages to your Cloudflare Worker.',
               ),
               const SizedBox(height: 20),
               _label('Worker URL'),
               _textField(controller: _urlCtrl, hint: 'https://your-worker.workers.dev', icon: Icons.link, keyboard: TextInputType.url),
               const SizedBox(height: 16),
               _label('API Key'),
-              _textField(controller: _keyCtrl, hint: 'আপনার Worker এর API Key', icon: Icons.key, obscure: true),
+              _textField(controller: _keyCtrl, hint: 'Your Worker API Key', icon: Icons.key, obscure: true),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -197,7 +196,7 @@ class _SetupScreenState extends State<SetupScreen> {
                   icon: _testing
                       ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary))
                       : const Icon(Icons.wifi_tethering, size: 18),
-                  label: Text(_testing ? 'Testing...' : 'Connection Test করুন'),
+                  label: Text(_testing ? 'Testing...' : 'Test Connection'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: kPrimary, side: const BorderSide(color: kPrimary),
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -229,16 +228,16 @@ class _SetupScreenState extends State<SetupScreen> {
                   ),
                   child: _saving
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Save করুন ও শুরু করুন →', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+                      : const Text('Save & Get Started →', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
                 ),
               ),
               const SizedBox(height: 32),
-              _sectionTitle('কীভাবে কাজ করে?'),
+              _sectionTitle('How It Works'),
               const SizedBox(height: 12),
-              _stepCard('১', 'bKash থেকে SMS আসলে instantly forward হয়'),
-              _stepCard('২', 'Background এ প্রতি ১৫ সেকেন্ডে SMS inbox check করে'),
-              _stepCard('৩', 'Notification bar এ সবসময় status দেখা যায়'),
-              _stepCard('৪', 'Phone restart হলেও স্বয়ংক্রিয়ভাবে চালু হয়'),
+              _stepCard('1', 'Instantly forwards SMS as soon as it arrives from bKash'),
+              _stepCard('2', 'Checks SMS inbox every 15 seconds in the background'),
+              _stepCard('3', 'Status is always visible in the notification bar'),
+              _stepCard('4', 'Automatically restarts after phone reboot'),
             ],
           ),
         ),
@@ -341,7 +340,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadPrefs();
     _checkPermissions();
     _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadPrefs());
-    // Service চালু করো
     _startService();
   }
 
@@ -355,7 +353,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // App background এ গেলে service নিশ্চিত করো
       _startService();
     }
   }
@@ -372,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _apiKey = prefs.getString(kApiKey) ?? '';
       _enabled = prefs.getBool(kEnabled) ?? true;
       _forwardCount = prefs.getInt(kForwardCount) ?? 0;
-      _lastLog = prefs.getString(kLastLog) ?? 'কোনো activity নেই';
+      _lastLog = prefs.getString(kLastLog) ?? 'No activity yet';
     });
   }
 
@@ -451,11 +448,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       _alertCard(
                         color: kDanger, bgColor: const Color(0xFF2D1212),
                         icon: Icons.warning_amber,
-                        title: 'SMS Permission নেই!',
-                        body: 'SMS forward করতে permission দিতে হবে।',
+                        title: 'SMS Permission Required!',
+                        body: 'Permission is required to forward SMS messages.',
                         action: TextButton(
                           onPressed: _requestPerms,
-                          child: const Text('Permission দিন', style: TextStyle(color: kDanger, fontWeight: FontWeight.w600)),
+                          child: const Text('Grant Permission', style: TextStyle(color: kDanger, fontWeight: FontWeight.w600)),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -472,14 +469,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           begin: Alignment.topLeft, end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _enabled && _hasPerms ? kSuccess.withOpacity(0.4) : kBorder),
+                        border: Border.all(color: _enabled && _hasPerms ? kSuccess.withValues(alpha: 0.4) : kBorder),
                       ),
                       child: Row(
                         children: [
                           Container(
                             width: 52, height: 52,
                             decoration: BoxDecoration(
-                              color: (_enabled && _hasPerms ? kSuccess : kMuted).withOpacity(0.15),
+                              color: (_enabled && _hasPerms ? kSuccess : kMuted).withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(26),
                             ),
                             child: Icon(
@@ -502,8 +499,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                 const SizedBox(height: 2),
                                 Text(
                                   _enabled && _hasPerms
-                                      ? 'Notification চলছে • প্রতি ১৫ সেকেন্ডে check'
-                                      : _hasPerms ? 'Toggle করে চালু করুন' : 'SMS permission দিন',
+                                      ? 'Notification running • Checks every 15 seconds'
+                                      : _hasPerms ? 'Toggle to enable' : 'Grant SMS permission',
                                   style: const TextStyle(fontSize: 12, color: kMuted),
                                 ),
                               ],
@@ -512,8 +509,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Switch(
                             value: _enabled,
                             onChanged: (_) => _toggleEnabled(),
-                            activeColor: kSuccess,
-                            activeTrackColor: kSuccess.withOpacity(0.3),
+                            activeThumbColor: kSuccess,
+                            activeTrackColor: kSuccess.withValues(alpha: 0.3),
                           ),
                         ],
                       ),
@@ -540,15 +537,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       decoration: BoxDecoration(
                         color: const Color(0xFF0F1E2D),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF3B82F6).withOpacity(0.3)),
+                        border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.3)),
                       ),
-                      child: Row(
+                      child: const Row(
                         children: [
-                          const Icon(Icons.notifications_active, color: Color(0xFF60A5FA), size: 20),
-                          const SizedBox(width: 10),
-                          const Expanded(
+                          Icon(Icons.notifications_active, color: Color(0xFF60A5FA), size: 20),
+                          SizedBox(width: 10),
+                          Expanded(
                             child: Text(
-                              'Background Service চলছে। Notification bar এ সবসময় দেখা যাবে। প্রতি ১৫ সেকেন্ডে SMS inbox check করে।',
+                              'Background service is running. Always visible in the notification bar. Checks SMS inbox every 15 seconds.',
                               style: TextStyle(fontSize: 12, color: Color(0xFF93C5FD), height: 1.5),
                             ),
                           ),
@@ -594,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       child: OutlinedButton.icon(
                         onPressed: _openSettings,
                         icon: const Icon(Icons.tune, size: 18),
-                        label: const Text('Settings খুলুন'),
+                        label: const Text('Open Settings'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: kPrimary, side: const BorderSide(color: kPrimary),
                           padding: const EdgeInsets.symmetric(vertical: 14),
@@ -641,7 +638,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget _alertCard({required Color color, required Color bgColor, required IconData icon, required String title, required String body, Widget? action}) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withOpacity(0.5))),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withValues(alpha: 0.5))),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -692,7 +689,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
     if (url.isEmpty || key.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('URL এবং API Key দিন'), backgroundColor: kDanger));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter URL and API Key'), backgroundColor: kDanger));
       return;
     }
     final prefs = await SharedPreferences.getInstance();
@@ -705,7 +702,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _testConnection() async {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
-    if (url.isEmpty || key.isEmpty) { setState(() { _testResult = 'URL এবং API Key দিন।'; _testSuccess = false; }); return; }
+    if (url.isEmpty || key.isEmpty) { setState(() { _testResult = 'Please enter URL and API Key.'; _testSuccess = false; }); return; }
     setState(() { _testing = true; _testResult = ''; });
     try {
       final res = await http.post(
@@ -715,7 +712,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ).timeout(const Duration(seconds: 15));
       setState(() {
         _testSuccess = res.statusCode >= 200 && res.statusCode < 300;
-        _testResult = _testSuccess ? '✅ সংযোগ সফল! (HTTP ${res.statusCode})' : '❌ HTTP ${res.statusCode}';
+        _testResult = _testSuccess ? '✅ Connection successful! (HTTP ${res.statusCode})' : '❌ HTTP ${res.statusCode}';
       });
     } catch (e) {
       setState(() { _testResult = '❌ Error: ${e.toString().substring(0, e.toString().length.clamp(0, 80))}'; _testSuccess = false; });
@@ -728,11 +725,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: kCard,
-        title: const Text('Reset করবেন?', style: TextStyle(color: Colors.white)),
-        content: const Text('সব settings মুছে setup screen-এ যাবে।', style: TextStyle(color: kMuted)),
+        title: const Text('Reset App?', style: TextStyle(color: Colors.white)),
+        content: const Text('All settings will be cleared and you will be taken to the setup screen.', style: TextStyle(color: kMuted)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('না')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('হ্যাঁ, Reset', style: TextStyle(color: kDanger))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Yes, Reset', style: TextStyle(color: kDanger))),
         ],
       ),
     );
@@ -765,8 +762,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (_saved)
               Container(
                 width: double.infinity, padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: const Color(0xFF0F2D1A), borderRadius: BorderRadius.circular(8), border: Border.all(color: kSuccess.withOpacity(0.5))),
-                child: const Text('✅ Settings save হয়েছে!', style: TextStyle(color: kSuccess, fontSize: 13)),
+                decoration: BoxDecoration(color: const Color(0xFF0F2D1A), borderRadius: BorderRadius.circular(8), border: Border.all(color: kSuccess.withValues(alpha: 0.5))),
+                child: const Text('✅ Settings saved successfully!', style: TextStyle(color: kSuccess, fontSize: 13)),
               ),
             const Text('Worker Configuration', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
             const SizedBox(height: 14),
@@ -776,7 +773,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Column(children: [
                 _settingsField('Worker URL', _urlCtrl, 'https://your-worker.workers.dev', Icons.link),
                 const SizedBox(height: 14),
-                _settingsField('API Key', _keyCtrl, 'আপনার API Key', Icons.key, obscure: true),
+                _settingsField('API Key', _keyCtrl, 'Your API Key', Icons.key, obscure: true),
               ]),
             ),
             const SizedBox(height: 14),
@@ -805,7 +802,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(height: 10),
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: _testSuccess ? const Color(0xFF0F2D1A) : const Color(0xFF2D1212), borderRadius: BorderRadius.circular(8), border: Border.all(color: (_testSuccess ? kSuccess : kDanger).withOpacity(0.5))),
+                decoration: BoxDecoration(color: _testSuccess ? const Color(0xFF0F2D1A) : const Color(0xFF2D1212), borderRadius: BorderRadius.circular(8), border: Border.all(color: (_testSuccess ? kSuccess : kDanger).withValues(alpha: 0.5))),
                 child: Text(_testResult, style: TextStyle(fontSize: 12, color: _testSuccess ? kSuccess : const Color(0xFFFCA5A5))),
               ),
             ],
@@ -817,7 +814,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: OutlinedButton.icon(
                 onPressed: _resetApp,
                 icon: const Icon(Icons.restore, size: 16),
-                label: const Text('App Reset করুন'),
+                label: const Text('Reset App'),
                 style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: const BorderSide(color: kDanger), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
               ),
             ),
