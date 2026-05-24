@@ -1,6 +1,6 @@
 # PayGate SMS Forwarder
 
-A Flutter-based Android application that automatically detects incoming bKash SMS notifications and forwards them to a remote HTTP endpoint (e.g., a Cloudflare Worker). Designed for payment monitoring, automated reconciliation, and real-time bKash transaction tracking.
+A Flutter-based Android application that automatically detects incoming payment SMS notifications and forwards them to a remote HTTP endpoint (e.g., a Cloudflare Worker). Designed for payment monitoring, automated reconciliation, and real-time payment transaction tracking.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)](https://flutter.dev)
