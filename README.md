@@ -100,7 +100,7 @@ All items should show a green checkmark. Fix any reported issues before continui
 
 ```bash
 git clone https://github.com/devfahim00/PayGateApp.git
-cd paygate
+cd PayGateApp
 ```
 
 Install Flutter dependencies:
