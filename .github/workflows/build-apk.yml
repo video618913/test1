@@ -1,60 +1,44 @@
 name: Flutter APK Build
 
 on:
-  # যখনই main ব্রাঞ্চে কোড পুশ করা হবে
-  push:
-    branches: [ main ]
-  # ইচ্ছে করলে Pull Request এর জন্যও চালানো যায়
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build-android:
     name: Build Android APK
-    # Linux রানার ব্যবহার করুন (এটা ফ্রি এবং দ্রুত) [citation:4]
     runs-on: ubuntu-latest
-    
+
     steps:
-      # ১. আপনার রিপোজিটরির কোড ডাউনলোড করা [citation:5]
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ২. Java সেটআপ করা (Flutter Android বিল্ডের জন্য বাধ্যতামূলক) [citation:5][citation:8]
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      # ৩. Flutter এনভায়রনমেন্ট সেটআপ করা (ক্যাশিং চালু করে, যেন পরের বার দ্রুত কাজ করে) [citation:5][citation:7]
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          # এই অপশনটা Flutter আর Pub ডিপেন্ডেন্সি ক্যাশ করে দেয়, বিল্ড স্পিড বাড়ায়
-          cache: true 
+          cache: true
 
-      # ৪. প্রোজেক্টের ডিপেন্ডেন্সি ইনস্টল করা [citation:4][citation:8]
       - name: Get dependencies
         run: flutter pub get
 
-      # ৫. (অপশনাল) কোড চেক করা - প্রোডাকশনের জন্য ভালো অভ্যাস [citation:1][citation:4]
       - name: Analyze code
         run: flutter analyze
 
-      # ৬. (অপশনাল) টেস্ট রান করা [citation:1][citation:4]
       - name: Run tests
         run: flutter test
 
-      # ৭. রিলিজ APK বিল্ড করা [citation:5]
       - name: Build APK
         run: flutter build apk --release
 
-      # ৮. বিল্ড আউটপুট জমা রাখা (আপনি GitHub থেকেই ডাউনলোড করতে পারবেন) [citation:1][citation:8]
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
-          # ৩০ দিন পর আউটপুট ডিলিট হয়ে যাবে, যা স্টোরেজ বাঁচায় [citation:1]
-          retention-days: 30
+          retention-days: 3
