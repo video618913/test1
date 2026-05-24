@@ -99,7 +99,7 @@ All items should show a green checkmark. Fix any reported issues before continui
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-username/paygate.git
+git clone https://github.com/devfahim00/PayGateApp.git
 cd paygate
 ```
 
