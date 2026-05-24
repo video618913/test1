@@ -649,7 +649,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             children: [
               Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: color, fontSize: 13)),
               Text(body, style: const TextStyle(fontSize: 12, color: kMuted)),
-              if (action != null) action,
+              ?action,
             ],
           )),
         ],
