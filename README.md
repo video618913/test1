@@ -1,165 +1,304 @@
 # PayGate SMS Forwarder
 
-A Flutter-based Android application that automatically detects incoming payment SMS notifications and forwards them to a remote HTTP endpoint (e.g., a Cloudflare Worker). Designed for payment monitoring, automated reconciliation, and real-time payment transaction tracking.
+A two-part open-source payment gateway system for bKash. An Android app (Flutter) automatically detects incoming bKash SMS and forwards them to a Cloudflare Worker backend that verifies transactions and serves payment pages.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)](https://flutter.dev)
 [![Platform](https://img.shields.io/badge/Platform-Android-green)](https://developer.android.com)
+[![Cloudflare Workers](https://img.shields.io/badge/Backend-Cloudflare%20Workers-orange)](https://workers.cloudflare.com)
 
 ---
 
 ## Table of Contents
 
-- [Features](#features)
-- [How It Works](#how-it-works)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Setup Guide](#setup-guide)
-  - [1. Clone the Repository](#1-clone-the-repository)
-  - [2. Configure the Backend Endpoint](#2-configure-the-backend-endpoint)
-  - [3. Build the App](#3-build-the-app)
-  - [4. Install on Device](#4-install-on-device)
-  - [5. In-App Setup](#5-in-app-setup)
-- [Backend API Contract](#backend-api-contract)
-- [Project Structure](#project-structure)
+- [Overview](#overview)
+- [System Architecture](#system-architecture)
+- [Repository Structure](#repository-structure)
+- [Part 1 — Cloudflare Worker Setup](#part-1--cloudflare-worker-setup)
+  - [Prerequisites](#worker-prerequisites)
+  - [1. Create a KV Namespace](#1-create-a-kv-namespace)
+  - [2. Deploy the Worker](#2-deploy-the-worker)
+  - [3. Set Environment Variables](#3-set-environment-variables)
+  - [4. Initialize Admin Password](#4-initialize-admin-password)
+  - [5. Admin Panel Walkthrough](#5-admin-panel-walkthrough)
+- [Part 2 — Android App Setup](#part-2--android-app-setup)
+  - [Prerequisites](#app-prerequisites)
+  - [1. Clone & Install Dependencies](#1-clone--install-dependencies)
+  - [2. Build the APK](#2-build-the-apk)
+  - [3. Install on Device](#3-install-on-device)
+  - [4. In-App Configuration](#4-in-app-configuration)
+- [Backend API Reference](#backend-api-reference)
+- [Worker KV Data Model](#worker-kv-data-model)
 - [Permissions](#permissions)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
 ---
 
-## Features
+## Overview
 
-- **Real-time SMS forwarding** via `BroadcastReceiver` — fires the moment a bKash SMS arrives
-- **Polling fallback** via a foreground `Service` — polls the SMS inbox every 15 seconds to catch any SMS missed by the receiver (e.g., after a reboot)
-- **Auto-start on boot** — the polling service restarts automatically after device reboot or app update
-- **Smart bKash detection** — identifies bKash SMS by sender number (`01769420420`, `16247`) and message keywords (`TrxID`, `received Tk`, `Cash Out`, etc.)
-- **Toggle on/off** from the home screen without uninstalling
-- **Settings screen** to update Worker URL and API Key at any time
-- **Forward counter and last log** displayed in the UI for quick status checks
+PayGate solves a common problem for small businesses and developers in Bangladesh: verifying bKash payments without access to the official bKash Payment Gateway API.
+
+**How it works:**
+
+1. A customer sends money via bKash to your personal/merchant number.
+2. bKash sends a confirmation SMS to your Android phone.
+3. The **Android app** detects the SMS and instantly forwards it to your **Cloudflare Worker**.
+4. The Worker parses the TrxID and amount, stores the transaction, and marks it as available for verification.
+5. The customer enters their TrxID on your **payment page** — the Worker verifies it against the stored record.
+
+No official API access required. No third-party services. Everything runs on your own infrastructure.
 
 ---
 
-## How It Works
+## System Architecture
+
+```
+Customer pays via bKash
+        │
+        ▼
+bKash SMS → Your Android Phone
+        │
+        ▼ HTTP POST (real-time)
+┌───────────────────────────────────┐
+│     Cloudflare Worker             │
+│  worker/worker.js                 │
+│                                   │
+│  ┌─────────────────────────────┐  │
+│  │  KV Store (PG_KV)           │  │
+│  │  • SMS records              │  │
+│  │  • Transaction records      │  │
+│  │  • Products / Payment Links │  │
+│  │  • Admin session + config   │  │
+│  └─────────────────────────────┘  │
+│                                   │
+│  Routes:                          │
+│  /admin         → Admin panel     │
+│  /pay/:id       → Payment page    │
+│  /api/sms/forward → Receive SMS   │
+│  /api/verify    → Verify TrxID    │
+│  /api/payment/check → Website API │
+└───────────────────────────────────┘
+        │                   │
+        ▼                   ▼
+ Customer enters       Your website
+ TrxID on /pay/:id     calls /api/verify
+```
+
+**Two forwarding mechanisms run in parallel on the Android app:**
 
 ```
 bKash SMS arrives
        │
-       ├──► SmsReceiver (BroadcastReceiver)
-       │         └── Detects bKash SMS → HTTP POST to Worker URL
+       ├──► SmsReceiver (BroadcastReceiver) — fires instantly
        │
-       └──► SmsPollingService (Foreground Service, every 15s)
-                 └── Reads SMS inbox → Detects new bKash SMS → HTTP POST to Worker URL
+       └──► SmsPollingService (polls inbox every 15s) — safety net
 ```
 
-Both paths forward the same JSON payload to your configured endpoint. The polling service acts as a safety net — Android may delay or drop broadcast intents on some OEM devices (Xiaomi, Oppo, Samsung with aggressive battery management).
+---
+
+## Repository Structure
+
+```
+PayGateApp/
+├── lib/
+│   └── main.dart                      # Flutter UI + app logic
+├── android/
+│   └── app/src/main/
+│       ├── AndroidManifest.xml        # Permissions & component declarations
+│       └── kotlin/com/example/paygate/
+│           ├── MainActivity.kt        # Flutter ↔ Kotlin MethodChannel bridge
+│           ├── SmsReceiver.kt         # Real-time SMS BroadcastReceiver
+│           ├── SmsPollingService.kt   # Foreground polling service (15s interval)
+│           └── BootReceiver.kt        # Auto-restart after reboot
+├── worker/
+│   └── worker.js                      # Cloudflare Worker — full backend
+├── test/
+│   └── widget_test.dart
+└── pubspec.yaml
+```
 
 ---
 
-## Architecture
+## Part 1 — Cloudflare Worker Setup
 
-| Layer | Component | Description |
-|---|---|---|
-| Flutter UI | `SetupScreen` | First-run configuration wizard |
-| Flutter UI | `HomeScreen` | Live status, toggle, forward counter |
-| Flutter UI | `SettingsScreen` | Update Worker URL / API Key |
-| Android Native | `SmsReceiver.kt` | `BroadcastReceiver` for real-time SMS |
-| Android Native | `SmsPollingService.kt` | Foreground service polling SMS inbox |
-| Android Native | `BootReceiver.kt` | Restarts service after reboot |
-| Android Native | `MainActivity.kt` | Flutter ↔ Kotlin bridge via `MethodChannel` |
-| Storage | `FlutterSharedPreferences` | Worker URL, API Key, enable flag, stats |
+### Worker Prerequisites
+
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up) (free tier is sufficient)
+- [Node.js](https://nodejs.org) 18+ installed
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) installed:
+
+```bash
+npm install -g wrangler
+wrangler login
+```
 
 ---
 
-## Prerequisites
+### 1. Create a KV Namespace
 
-Before building, make sure you have the following installed:
+The Worker stores all data in Cloudflare KV. Create a namespace:
+
+```bash
+wrangler kv:namespace create PG_KV
+```
+
+Note the `id` value from the output — you'll need it in the next step.
+
+Also create a preview namespace for local development:
+
+```bash
+wrangler kv:namespace create PG_KV --preview
+```
+
+---
+
+### 2. Deploy the Worker
+
+Create a `wrangler.toml` file in the project root (next to the `worker/` folder):
+
+```toml
+name = "paygate"
+main = "worker/worker.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "PG_KV"
+id = "YOUR_KV_NAMESPACE_ID"           # from step 1
+preview_id = "YOUR_PREVIEW_KV_ID"     # from step 1 (preview)
+```
+
+Deploy:
+
+```bash
+wrangler deploy
+```
+
+Your Worker will be live at:
+```
+https://paygate.<your-subdomain>.workers.dev
+```
+
+---
+
+### 3. Set Environment Variables
+
+The Worker requires two secrets. Set them via Wrangler (never hardcode them):
+
+```bash
+# A long random string — used to authorize the Android app
+wrangler secret put API_KEY
+# Paste a strong random key when prompted, e.g.: openssl rand -hex 32
+
+# A one-time secret used only to set the admin password
+wrangler secret put ADMIN_SECRET
+# Paste any secret string, e.g.: my-setup-secret-2025
+```
+
+| Variable | Purpose |
+|---|---|
+| `API_KEY` | Authenticates requests from the Android SMS Forwarder app and your backend |
+| `ADMIN_SECRET` | One-time secret for the `/setup` endpoint to initialize the admin password |
+
+---
+
+### 4. Initialize Admin Password
+
+Visit this URL once in your browser to set the admin panel password:
+
+```
+https://paygate.<your-subdomain>.workers.dev/setup?secret=YOUR_ADMIN_SECRET&password=YOUR_ADMIN_PASSWORD
+```
+
+- Replace `YOUR_ADMIN_SECRET` with the value you set in step 3.
+- Replace `YOUR_ADMIN_PASSWORD` with your desired admin password (min 8 characters).
+
+A successful response looks like:
+
+```json
+{ "success": true, "message": "Admin password set. Visit /admin to login." }
+```
+
+> **Security note:** After setup, the `ADMIN_SECRET` is no longer needed for day-to-day use. The admin password is stored as a SHA-256 hash in KV.
+
+---
+
+### 5. Admin Panel Walkthrough
+
+Visit `https://paygate.<your-subdomain>.workers.dev/admin` and log in with your admin password.
+
+**Brand Settings** (`/admin/brand`)
+
+Configure your brand name, logo URL, tagline, and primary color. These appear on all public payment pages.
+
+**bKash Configuration** (`/admin/bkash`)
+
+| Field | Description |
+|---|---|
+| bKash Number | Your personal/merchant bKash number that customers send money to |
+| Account Type | Personal, Merchant, or Agent |
+| VAT / Service Charge | Percentage added on top of the product price (displayed to customer) |
+| Payment Instructions | Custom text shown on the payment page |
+| Enable bKash Gateway | Toggle to activate/deactivate the payment pages |
+
+**Payment Links** (`/admin/products`)
+
+Each payment link is a public URL (`/pay/:id`) you can share with customers.
+
+- **Fixed Price** — amount is pre-set; customer pays exactly that amount
+- **Open Price** — customer enters the amount themselves (useful for donations or variable orders)
+- **Success Redirect URL** — where to send the customer after successful payment verification
+- **Webhook URL** — your server receives a POST with the transaction details after each verified payment
+
+**SMS Log** (`/admin/sms`)
+
+Shows every SMS forwarded by the Android app, with parsed TrxID, amount, and status. You can also add entries manually if the app missed an SMS.
+
+**Manual SMS Entry** (`/admin/sms/manual`)
+
+Paste a raw bKash SMS body to manually create a transaction record. Useful when the Android app is offline or a payment SMS was missed.
+
+**Transactions** (`/admin/transactions`)
+
+Full history of all verified and pending transactions with source (auto/manual), amount, TrxID, and linked product.
+
+---
+
+## Part 2 — Android App Setup
+
+### App Prerequisites
 
 | Tool | Version | Install Guide |
 |---|---|---|
 | Flutter SDK | 3.x or later | https://docs.flutter.dev/get-started/install |
-| Dart SDK | Bundled with Flutter | — |
 | Android Studio | Latest stable | https://developer.android.com/studio |
-| Android SDK | API 21+ (Android 5.0) | Via Android Studio SDK Manager |
+| Android SDK | API 21+ | Via Android Studio SDK Manager |
 | Java JDK | 17 | https://adoptium.net |
-| Git | Any recent version | https://git-scm.com |
+| Git | Any recent | https://git-scm.com |
 
-Verify your Flutter setup before proceeding:
+Verify your environment:
 
 ```bash
 flutter doctor
 ```
 
-All items should show a green checkmark. Fix any reported issues before continuing.
+All items must show a green checkmark before proceeding.
 
 ---
 
-## Setup Guide
-
-### 1. Clone the Repository
+### 1. Clone & Install Dependencies
 
 ```bash
 git clone https://github.com/devfahim00/PayGateApp.git
 cd PayGateApp
-```
-
-Install Flutter dependencies:
-
-```bash
 flutter pub get
 ```
 
 ---
 
-### 2. Configure the Backend Endpoint
+### 2. Build the APK
 
-PayGate forwards SMS data to an HTTP endpoint of your choice. The simplest option is a **Cloudflare Worker**, but any HTTPS endpoint works.
-
-#### Option A — Cloudflare Worker (recommended)
-
-Create a new Cloudflare Worker and paste the following handler:
-
-```javascript
-export default {
-  async fetch(request, env) {
-    if (request.method !== 'POST') {
-      return new Response('Method Not Allowed', { status: 405 });
-    }
-
-    const apiKey = request.headers.get('X-API-Key');
-    if (apiKey !== env.API_KEY) {
-      return new Response('Unauthorized', { status: 401 });
-    }
-
-    const body = await request.json();
-    // body = { sender, message, receivedAt }
-
-    // TODO: store to KV, D1, or forward to your system
-    console.log('SMS received:', JSON.stringify(body));
-
-    return new Response(JSON.stringify({ ok: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  },
-};
-```
-
-Set an environment variable `API_KEY` in your Worker settings (a long random string, e.g., `openssl rand -hex 32`).
-
-Your Worker URL will look like:
-```
-https://your-worker-name.your-subdomain.workers.dev
-```
-
-#### Option B — Any HTTPS Server
-
-Your server must expose a `POST /api/sms/forward` endpoint. See the [Backend API Contract](#backend-api-contract) section for the expected request format.
-
----
-
-### 3. Build the App
-
-#### Debug Build (for development/testing)
+#### Debug Build (for testing)
 
 ```bash
 flutter build apk --debug
@@ -167,11 +306,9 @@ flutter build apk --debug
 
 Output: `build/app/outputs/flutter-apk/app-debug.apk`
 
-#### Release Build (for production use)
+#### Release Build (for production)
 
-> **Note:** You must sign the APK for release. Follow the steps below to create a signing keystore.
-
-**Step 1 — Create a keystore** (skip if you already have one):
+**Step 1 — Create a signing keystore:**
 
 ```bash
 keytool -genkey -v \
@@ -182,7 +319,7 @@ keytool -genkey -v \
   -alias paygate
 ```
 
-You will be prompted for a password and some identity information. Keep this file safe — losing it means you cannot update the app.
+Keep this `.jks` file safe — you need it for every future update.
 
 **Step 2 — Create `android/key.properties`:**
 
@@ -195,7 +332,7 @@ storeFile=/absolute/path/to/paygate-release.jks
 
 **Step 3 — Reference it in `android/app/build.gradle.kts`:**
 
-Add the following before the `android {}` block:
+Add before the `android {}` block:
 
 ```kotlin
 import java.util.Properties
@@ -203,12 +340,10 @@ import java.io.FileInputStream
 
 val keyProps = Properties()
 val keyPropsFile = rootProject.file("key.properties")
-if (keyPropsFile.exists()) {
-    keyProps.load(FileInputStream(keyPropsFile))
-}
+if (keyPropsFile.exists()) { keyProps.load(FileInputStream(keyPropsFile)) }
 ```
 
-Then inside `buildTypes { release { ... } }`:
+Inside `buildTypes { release { ... } }`:
 
 ```kotlin
 release {
@@ -222,7 +357,7 @@ release {
 }
 ```
 
-**Step 4 — Build the signed APK:**
+**Step 4 — Build:**
 
 ```bash
 flutter build apk --release
@@ -232,15 +367,15 @@ Output: `build/app/outputs/flutter-apk/app-release.apk`
 
 ---
 
-### 4. Install on Device
+### 3. Install on Device
 
 Enable **Developer Options** and **USB Debugging** on your Android device, then:
 
 ```bash
-# Install via USB
+# Install directly via USB
 flutter install
 
-# Or copy the APK manually
+# Or via adb
 adb install build/app/outputs/flutter-apk/app-release.apk
 ```
 
@@ -248,123 +383,293 @@ Minimum Android version: **5.0 (API 21)**
 
 ---
 
-### 5. In-App Setup
+### 4. In-App Configuration
 
-1. **Launch** PayGate SMS on your device.
-2. On the **Setup Screen**, enter:
-   - **Worker URL** — the base URL of your endpoint (e.g., `https://your-worker.workers.dev`)
-   - **API Key** — the secret key configured on your backend
-3. Tap **Save & Continue**.
-4. **Grant permissions** when prompted:
-   - `RECEIVE_SMS` and `READ_SMS` — required to detect and read incoming messages
-   - `POST_NOTIFICATIONS` — required on Android 13+ to show the foreground service notification
-5. On some devices (Xiaomi, Oppo, Vivo, Samsung), you must also **disable battery optimization** for PayGate:
+1. **Launch** the app. The Setup Screen appears on first run.
+
+2. Enter your **Worker URL** — the base URL of your deployed Cloudflare Worker:
+   ```
+   https://paygate.<your-subdomain>.workers.dev
+   ```
+
+3. Enter your **API Key** — the same value you set as `API_KEY` in Wrangler secrets.
+
+4. Tap **Save & Continue**.
+
+5. **Grant all permissions** when prompted:
+   - `RECEIVE_SMS` and `READ_SMS` — required to detect bKash messages
+   - `POST_NOTIFICATIONS` — required on Android 13+ for the foreground service notification
+
+6. **Disable battery optimization** for PayGate — this is critical on most Android devices:
    - Go to **Settings → Apps → PayGate SMS → Battery → Unrestricted**
-6. The app will show a green status indicator and begin forwarding bKash SMS automatically.
+   - On Xiaomi/MIUI: also enable **Autostart** under **Settings → Apps → Manage apps → PayGate SMS → Autostart**
+   - On Samsung One UI: disable **Adaptive Battery** restrictions for the app
 
-To update your Worker URL or API Key later, tap the **Settings** icon on the home screen.
+7. The home screen shows a **green status indicator** when everything is running. The app will now forward every incoming bKash SMS to your Worker automatically.
+
+To update the Worker URL or API Key later: tap the **Settings** (⚙) icon on the home screen.
 
 ---
 
-## Backend API Contract
+## Backend API Reference
 
-PayGate sends an HTTP `POST` request to `{WORKER_URL}/api/sms/forward`.
-
-**Request Headers:**
+All API endpoints (except `/api/public/submit`) require the header:
 
 ```
-Content-Type: application/json
-X-API-Key: <your-api-key>
+X-API-Key: YOUR_API_KEY
 ```
 
-**Request Body:**
+---
+
+### POST `/api/sms/forward`
+
+Receives a forwarded bKash SMS from the Android app. Parses the TrxID and amount, stores the SMS record, and creates a pending transaction.
+
+**Request body:**
 
 ```json
 {
   "sender": "01769420420",
-  "message": "You have received Tk 500.00 from 01XXXXXXXXX. TrxID AB1234567. Balance Tk 1,500.00. bKash your partner.",
-  "receivedAt": "2025-05-24T10:30:00Z"
+  "message": "You have received Tk 30.00 from 01XXXXXXXXX. Fee Tk 0.00. Balance Tk 1,294.36. TrxID DDS3M42DR5 at 28/04/2026 21:23",
+  "receivedAt": "2026-04-28T21:23:00Z"
 }
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `sender` | `string` | Originating phone number or sender ID |
-| `message` | `string` | Full SMS body text |
-| `receivedAt` | `string` | ISO 8601 UTC timestamp of when the SMS was received |
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `sender` | string | No | Originating number or sender ID |
+| `message` | string | **Yes** | Full SMS body text |
+| `receivedAt` | string | No | ISO 8601 UTC timestamp — defaults to current time |
 
-**Expected Response:**
+**Success response:**
 
-Any `2xx` status code is treated as success. Non-2xx causes the app to log a failure in the UI.
+```json
+{
+  "success": true,
+  "smsId": "abc123def456gh",
+  "parsed": {
+    "trxId": "DDS3M42DR5",
+    "amount": 30,
+    "senderPhone": "01XXXXXXXXX"
+  },
+  "message": "SMS recorded. Transaction available for verification."
+}
+```
+
+**Parse failure response** (SMS saved but TrxID not found):
+
+```json
+{
+  "success": false,
+  "smsId": "abc123def456gh",
+  "message": "SMS recorded but could not parse TrxID. Check raw SMS format."
+}
+```
 
 ---
 
-## Project Structure
+### POST `/api/verify`
+
+Verifies a transaction by TrxID. Marks it as used — cannot be verified again.
+
+**Request body:**
+
+```json
+{
+  "trxId": "DDS3M42DR5",
+  "amount": 30
+}
+```
+
+**Success response:**
+
+```json
+{
+  "success": true,
+  "valid": true,
+  "message": "Transaction verified.",
+  "transaction": {
+    "trxId": "DDS3M42DR5",
+    "amount": 30,
+    "senderPhone": "01XXXXXXXXX",
+    "status": "verified",
+    "verifiedAt": "2026-04-28T21:25:00Z"
+  }
+}
+```
+
+**Failure responses:**
+
+```json
+{ "success": false, "valid": false, "message": "Transaction not found. SMS not received yet or TrxID incorrect." }
+{ "success": false, "valid": false, "message": "Transaction ID already used." }
+{ "success": false, "valid": false, "message": "Amount mismatch. Expected ৳500, got ৳30." }
+```
+
+---
+
+### POST `/api/payment/check`
+
+Website integration endpoint. Verifies payment and links it to an order ID.
+
+**Request body:**
+
+```json
+{
+  "trxId": "DDS3M42DR5",
+  "amount": 500,
+  "orderId": "ORDER-123",
+  "customerPhone": "01XXXXXXXXX"
+}
+```
+
+**Response:** same structure as `/api/verify` with `orderId` included.
+
+---
+
+### GET `/api/transaction/:trxId`
+
+Fetches the full transaction record without consuming it.
 
 ```
-paygate/
-├── lib/
-│   └── main.dart                  # All Flutter UI and app logic
-├── android/
-│   └── app/src/main/
-│       ├── AndroidManifest.xml    # Permissions, receivers, service declarations
-│       └── kotlin/com/example/paygate/
-│           ├── MainActivity.kt        # Flutter ↔ Kotlin MethodChannel bridge
-│           ├── SmsReceiver.kt         # BroadcastReceiver for real-time SMS
-│           ├── SmsPollingService.kt   # Foreground service, polls every 15s
-│           └── BootReceiver.kt        # Restarts service after device reboot
-├── test/
-│   └── widget_test.dart           # Basic widget smoke test
-└── pubspec.yaml                   # Flutter dependencies
+GET /api/transaction/DDS3M42DR5
+```
+
+---
+
+### GET `/pay/:productId`
+
+Public payment page for customers. No API key required.
+
+```
+GET /pay/abc123def4        → fixed price payment page
+GET /pay/abc123def4?amount=500  → open price, pre-filled with 500
+```
+
+---
+
+### JavaScript Integration Snippet
+
+```html
+<script>
+async function verifyPayment(trxId, amount) {
+  const res = await fetch('https://paygate.<your-subdomain>.workers.dev/api/verify', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': 'YOUR_API_KEY'
+    },
+    body: JSON.stringify({ trxId, amount })
+  });
+  return await res.json();
+  // returns: { success, valid, transaction }
+}
+
+// Usage
+const result = await verifyPayment('DDS3M42DR5', 500);
+if (result.success && result.valid) {
+  // payment confirmed — proceed with order
+} else {
+  alert(result.message);
+}
+</script>
+```
+
+---
+
+## Worker KV Data Model
+
+All data is stored in the `PG_KV` namespace using the following key patterns:
+
+| Key Pattern | Value | Description |
+|---|---|---|
+| `admin:password` | SHA-256 hash string | Hashed admin password |
+| `config:brand` | JSON object | Brand name, logo, color, tagline |
+| `config:bkash` | JSON object | bKash phone, VAT, account type, enabled flag |
+| `sessions:<token>` | `"1"` (TTL 86400s) | Active admin session token |
+| `product:<id>` | JSON object | Payment link / product record |
+| `products:index` | JSON array of IDs | All product IDs |
+| `sms:<id>` | JSON object | Raw SMS record (source of truth) |
+| `sms:index` | JSON array of IDs | All SMS IDs in insertion order |
+| `txn:<trxId>` | JSON object | Transaction record (created from SMS) |
+| `txn:used:<trxId>` | `"1"` | Set when a transaction is consumed/verified |
+| `txn:index` | JSON array of TrxIDs | All transaction IDs |
+
+**Transaction record structure:**
+
+```json
+{
+  "trxId": "DDS3M42DR5",
+  "amount": 30.00,
+  "senderPhone": "01XXXXXXXXX",
+  "status": "received | verified | used",
+  "createdAt": "2026-04-28T21:23:00Z",
+  "verifiedAt": "2026-04-28T21:25:00Z",
+  "smsId": "abc123def456gh",
+  "source": "sms_forward | manual",
+  "productId": "abc123def4",
+  "productName": "Monthly Subscription"
+}
 ```
 
 ---
 
 ## Permissions
 
+The Android app requests the following permissions:
+
 | Permission | Why it's needed |
 |---|---|
-| `RECEIVE_SMS` | Trigger `SmsReceiver` the moment a new SMS arrives |
-| `READ_SMS` | Allow the polling service to read the SMS inbox |
-| `INTERNET` | Forward SMS data to the Worker endpoint |
-| `FOREGROUND_SERVICE` | Run the polling service in the background |
-| `FOREGROUND_SERVICE_DATA_SYNC` | Android 14+ foreground service type requirement |
-| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Keep the service alive on battery-aggressive OEM ROMs |
+| `RECEIVE_SMS` | Trigger `SmsReceiver` the moment a bKash SMS arrives |
+| `READ_SMS` | Allow the polling service to query the SMS inbox |
+| `INTERNET` | Forward SMS data to the Cloudflare Worker |
+| `FOREGROUND_SERVICE` | Run the polling service continuously in the background |
+| `FOREGROUND_SERVICE_DATA_SYNC` | Required for foreground service type on Android 14+ |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Prevent OEM ROMs from killing the service |
 | `RECEIVE_BOOT_COMPLETED` | Restart the service after device reboot |
-| `WAKE_LOCK` | Prevent the CPU from sleeping mid-forward |
+| `WAKE_LOCK` | Keep CPU awake during an HTTP forward request |
 | `POST_NOTIFICATIONS` | Show the persistent foreground service notification (Android 13+) |
 
 ---
 
 ## Troubleshooting
 
-**bKash SMS is received but not forwarded**
+**bKash SMS received but not showing in the Worker's SMS log**
 
-- Open the app and confirm the green status is showing.
-- Check that **Worker URL** and **API Key** are correctly set in Settings.
-- On Xiaomi/Oppo/Samsung: go to `Settings → Apps → PayGate SMS → Battery` and set it to **Unrestricted**. These OEMs aggressively kill background services.
-- Confirm `RECEIVE_SMS` permission is granted via `Settings → Apps → PayGate SMS → Permissions`.
+- Confirm the app shows a green status on the home screen.
+- Go to Settings in the app and verify the Worker URL has no trailing slash (`https://...workers.dev` not `https://...workers.dev/`).
+- Verify the API Key in the app matches the `API_KEY` secret in your Worker exactly.
+- On Xiaomi / Oppo / Samsung: set battery optimization to **Unrestricted** for PayGate SMS.
+- Enable **Autostart** for the app on MIUI and ColorOS.
 
-**The app says "No permission" even after granting**
+**Worker returns 401 Unauthorized**
 
-- Some devices require restarting the app after granting permissions.
-- On Android 13+, `POST_NOTIFICATIONS` must be granted separately — allow it when prompted.
+- The `X-API-Key` header value does not match the `API_KEY` secret on the Worker.
+- Re-check with `wrangler secret list` and update the app's API Key in Settings.
 
-**Forward fails with an error in the log**
+**TrxID parse fails (SMS saved but no transaction created)**
 
-- Verify your Worker URL is reachable from the device (open it in a browser).
-- Make sure the URL has no trailing slash and the endpoint path is `/api/sms/forward`.
-- Double-check the API Key matches exactly what your backend expects.
+- Check the raw SMS text in the Admin SMS Log.
+- The parser expects the keyword `TrxID` followed by the transaction ID (e.g., `TrxID DDS3M42DR5`).
+- If bKash changes their SMS format, use **Manual SMS Entry** as a workaround and open a GitHub issue.
 
-**Service stops after a while**
+**Payment verification says "Transaction not found"**
 
-- Battery optimization is the most common cause. Disable it for PayGate SMS as described in [Step 5](#5-in-app-setup).
-- On some ROMs, you also need to enable **Autostart** permission for the app.
+- The SMS has not been forwarded yet — the Android app may be offline or battery-restricted.
+- Use `/admin/sms/manual` to add the transaction manually.
+- Wait a few seconds and retry — the polling service runs every 15 seconds.
 
-**Build fails with `flutter doctor` errors**
+**Service stops working after a while**
 
-- Run `flutter doctor --verbose` for detailed diagnostics.
-- Ensure `JAVA_HOME` points to JDK 17 and the Android SDK is installed via Android Studio.
+- Battery optimization is the most common cause on Android 8+.
+- Path: **Settings → Apps → PayGate SMS → Battery → Unrestricted**.
+- On some Samsung devices, also disable **Sleeping apps** and **Deep sleeping apps** lists.
+
+**Build fails: `flutter doctor` errors**
+
+- Run `flutter doctor --verbose` for detailed output.
+- Ensure `JAVA_HOME` points to JDK 17 (`java -version` should show `17.x.x`).
+- Ensure Android SDK Build Tools are installed via Android Studio SDK Manager.
 
 ---
 
