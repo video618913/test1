@@ -21,13 +21,16 @@ class SmsPollingService : Service() {
         const val TAG = "PayGatePoller"
         const val CHANNEL_ID = "paygate_foreground"
         const val NOTIF_ID = 1001
-        const val PREFS_NAME = "PayGatePrefs"
-        const val KEY_WORKER_URL = "worker_url"
-        const val KEY_API_KEY = "api_key"
-        const val KEY_ENABLED = "sms_forward_enabled"
-        const val KEY_FORWARD_COUNT = "forward_count"
-        const val KEY_LAST_LOG = "last_log"
+        // Flutter shared_preferences uses FlutterSharedPreferences file with "flutter." prefix
+        const val PREFS_NAME = "FlutterSharedPreferences"
+        const val KEY_WORKER_URL = "flutter.worker_url"
+        const val KEY_API_KEY = "flutter.api_key"
+        const val KEY_ENABLED = "flutter.sms_forward_enabled"
+        const val KEY_FORWARD_COUNT = "flutter.forward_count"
+        const val KEY_LAST_LOG = "flutter.last_log"
+        // Internal tracking key — no flutter. prefix (not a Flutter pref)
         const val KEY_LAST_SMS_DATE = "last_sms_date_polled"
+        const val PREFS_INTERNAL = "PayGateInternal"
         const val POLL_INTERVAL_MS = 15_000L
 
         fun start(context: Context) {
@@ -52,7 +55,7 @@ class SmsPollingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startPolling()
-        return START_STICKY // system restart করলেও service আবার চালু হবে
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -63,8 +66,6 @@ class SmsPollingService : Service() {
         Log.d(TAG, "Service destroyed")
         super.onDestroy()
     }
-
-    // ─── Polling Loop ────────────────────────────────────────────────────────
 
     private fun startPolling() {
         pollingJob?.cancel()
@@ -82,16 +83,18 @@ class SmsPollingService : Service() {
     }
 
     private suspend fun pollSmsInbox() {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val enabled = prefs.getBoolean(KEY_ENABLED, true)
+        val flutterPrefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val internalPrefs = getSharedPreferences(PREFS_INTERNAL, Context.MODE_PRIVATE)
+
+        val enabled = flutterPrefs.getBoolean(KEY_ENABLED, true)
         if (!enabled) return
 
-        val workerUrl = prefs.getString(KEY_WORKER_URL, "") ?: ""
-        val apiKey = prefs.getString(KEY_API_KEY, "") ?: ""
+        val workerUrl = flutterPrefs.getString(KEY_WORKER_URL, "") ?: ""
+        val apiKey = flutterPrefs.getString(KEY_API_KEY, "") ?: ""
         if (workerUrl.isEmpty() || apiKey.isEmpty()) return
 
-        // শেষবার কোন সময়ের SMS চেক করেছি
-        val lastCheckedDate = prefs.getLong(KEY_LAST_SMS_DATE, System.currentTimeMillis() - 60_000)
+        // Use internal prefs for polling state (not Flutter prefs)
+        val lastCheckedDate = internalPrefs.getLong(KEY_LAST_SMS_DATE, System.currentTimeMillis() - 60_000)
 
         val uri = Uri.parse("content://sms/inbox")
         val cursor: Cursor? = contentResolver.query(
@@ -99,7 +102,7 @@ class SmsPollingService : Service() {
             arrayOf("_id", "address", "body", "date"),
             "date > ?",
             arrayOf(lastCheckedDate.toString()),
-            "date DESC"
+            "date ASC"  // ASC so we process oldest first
         )
 
         var forwarded = 0
@@ -111,9 +114,10 @@ class SmsPollingService : Service() {
                 val sender = it.getString(it.getColumnIndexOrThrow("address")) ?: "Unknown"
                 val date = it.getLong(it.getColumnIndexOrThrow("date"))
 
+                // Track latest date regardless of whether it's bKash
                 if (date > latestDate) latestDate = date
 
-                if (!isBkashSms(body)) continue
+                if (!isBkashSms(sender, body)) continue
 
                 Log.d(TAG, "Poller found bKash SMS from: $sender")
 
@@ -124,8 +128,8 @@ class SmsPollingService : Service() {
                 val result = forwardSms(workerUrl, apiKey, sender, body, receivedAt)
                 if (result) {
                     forwarded++
-                    val count = prefs.getInt(KEY_FORWARD_COUNT, 0)
-                    prefs.edit()
+                    val count = flutterPrefs.getInt(KEY_FORWARD_COUNT, 0)
+                    flutterPrefs.edit()
                         .putInt(KEY_FORWARD_COUNT, count + 1)
                         .putString(KEY_LAST_LOG,
                             "[${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())}] ✅ Polled & Forwarded: ${body.take(50)}...")
@@ -134,12 +138,11 @@ class SmsPollingService : Service() {
             }
         }
 
-        // পরবর্তী poll এর জন্য timestamp save করো
+        // Always advance the pointer to avoid re-processing same SMS
         if (latestDate > lastCheckedDate) {
-            prefs.edit().putLong(KEY_LAST_SMS_DATE, latestDate).apply()
+            internalPrefs.edit().putLong(KEY_LAST_SMS_DATE, latestDate + 1).apply()
         }
 
-        // Notification update করো
         val notifText = if (forwarded > 0)
             "✅ $forwarded টি নতুন SMS forward করা হয়েছে"
         else
@@ -149,12 +152,23 @@ class SmsPollingService : Service() {
         Log.d(TAG, "Poll done — forwarded: $forwarded")
     }
 
-    // ─── Helpers ─────────────────────────────────────────────────────────────
+    private fun isBkashSms(sender: String, body: String): Boolean {
+        val lowerBody = body.lowercase()
+        val lowerSender = sender.lowercase()
 
-    private fun isBkashSms(body: String): Boolean {
-        val lower = body.lowercase()
-        return (lower.contains("trkid") || lower.contains("trxid")) &&
-               (lower.contains("tk ") || lower.contains("bkash") || lower.contains("received"))
+        val isBkashSender = lowerSender.contains("bkash") ||
+                            lowerSender == "01769-420420" ||
+                            lowerSender == "01769420420" ||
+                            lowerSender == "16247"
+
+        val hasTrxId = lowerBody.contains("trxid") || lowerBody.contains("trx id")
+        val hasBkashKeyword = lowerBody.contains("bkash") ||
+                              lowerBody.contains("received tk") ||
+                              lowerBody.contains("sent tk") ||
+                              lowerBody.contains("payment") ||
+                              lowerBody.contains("cash out")
+
+        return isBkashSender || (hasTrxId && hasBkashKeyword)
     }
 
     private fun forwardSms(
@@ -198,8 +212,6 @@ class SmsPollingService : Service() {
             .replace("\r", "\\r")
             .replace("\t", "\\t") + "\""
     }
-
-    // ─── Notification ─────────────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(

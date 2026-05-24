@@ -16,13 +16,13 @@ class SmsReceiver : BroadcastReceiver() {
 
     companion object {
         const val TAG = "PayGateSMS"
-        const val PREFS_NAME = "PayGatePrefs"
-        const val KEY_WORKER_URL = "worker_url"
-        const val KEY_API_KEY = "api_key"
-        const val KEY_ENABLED = "sms_forward_enabled"
-        const val KEY_LAST_SMS = "last_sms"
-        const val KEY_FORWARD_COUNT = "forward_count"
-        const val KEY_LAST_LOG = "last_log"
+        // Flutter shared_preferences uses FlutterSharedPreferences file with "flutter." prefix
+        const val PREFS_NAME = "FlutterSharedPreferences"
+        const val KEY_WORKER_URL = "flutter.worker_url"
+        const val KEY_API_KEY = "flutter.api_key"
+        const val KEY_ENABLED = "flutter.sms_forward_enabled"
+        const val KEY_FORWARD_COUNT = "flutter.forward_count"
+        const val KEY_LAST_LOG = "flutter.last_log"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -47,7 +47,7 @@ class SmsReceiver : BroadcastReceiver() {
         Log.d(TAG, "SMS received from: $sender")
         Log.d(TAG, "Body: $fullBody")
 
-        if (!isBkashSms(fullBody)) {
+        if (!isBkashSms(sender, fullBody)) {
             Log.d(TAG, "Not a bKash SMS, skipping")
             return
         }
@@ -58,7 +58,6 @@ class SmsReceiver : BroadcastReceiver() {
         sdf.timeZone = TimeZone.getTimeZone("UTC")
         val receivedAt = sdf.format(Date())
 
-        // goAsync() — Android কে বলে onReceive শেষ হলেও process kill করো না
         val pendingResult = goAsync()
 
         CoroutineScope(Dispatchers.IO).launch {
@@ -69,7 +68,6 @@ class SmsReceiver : BroadcastReceiver() {
 
                 val count = prefs.getInt(KEY_FORWARD_COUNT, 0)
                 prefs.edit()
-                    .putString(KEY_LAST_SMS, fullBody)
                     .putInt(KEY_FORWARD_COUNT, if (result) count + 1 else count)
                     .putString(KEY_LAST_LOG, "[${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())}] $logMsg")
                     .apply()
@@ -81,15 +79,30 @@ class SmsReceiver : BroadcastReceiver() {
                     .putString(KEY_LAST_LOG, "[${SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())}] ❌ Error: ${e.message}")
                     .apply()
             } finally {
-                pendingResult.finish() // process কে release করো
+                pendingResult.finish()
             }
         }
     }
 
-    private fun isBkashSms(body: String): Boolean {
-        val lower = body.lowercase()
-        return (lower.contains("trkid") || lower.contains("trxid")) &&
-               (lower.contains("tk ") || lower.contains("bkash") || lower.contains("received"))
+    private fun isBkashSms(sender: String, body: String): Boolean {
+        val lowerBody = body.lowercase()
+        val lowerSender = sender.lowercase()
+
+        // bKash official sender numbers/names
+        val isBkashSender = lowerSender.contains("bkash") ||
+                            lowerSender == "01769-420420" ||
+                            lowerSender == "01769420420" ||
+                            lowerSender == "16247"
+
+        // bKash SMS keywords — TrxID (not TrkID!)
+        val hasTrxId = lowerBody.contains("trxid") || lowerBody.contains("trx id")
+        val hasBkashKeyword = lowerBody.contains("bkash") ||
+                              lowerBody.contains("received tk") ||
+                              lowerBody.contains("sent tk") ||
+                              lowerBody.contains("payment") ||
+                              lowerBody.contains("cash out")
+
+        return isBkashSender || (hasTrxId && hasBkashKeyword)
     }
 
     private fun forwardSms(
@@ -110,10 +123,10 @@ class SmsReceiver : BroadcastReceiver() {
         conn.connectTimeout = 15000
         conn.readTimeout = 15000
 
-        val writer = OutputStreamWriter(conn.outputStream)
-        writer.write(jsonBody)
-        writer.flush()
-        writer.close()
+        OutputStreamWriter(conn.outputStream).use { w ->
+            w.write(jsonBody)
+            w.flush()
+        }
 
         val responseCode = conn.responseCode
         Log.d(TAG, "HTTP Response: $responseCode")
