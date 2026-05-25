@@ -133,23 +133,20 @@ npm install -g wrangler
 wrangler login
 ```
 
+> **Note:** Creating the KV Namespace and setting Environment Variables is done entirely through the Cloudflare Dashboard — no CLI commands needed for those steps.
+
 ---
 
 ### 1. Create a KV Namespace
 
-The Worker stores all data in Cloudflare KV. Create a namespace:
+The KV Namespace is the database for your Worker. Create it from the Cloudflare Dashboard:
 
-```bash
-wrangler kv:namespace create PG_KV
-```
-
-Note the `id` value from the output — you'll need it in the next step.
-
-Also create a preview namespace for local development:
-
-```bash
-wrangler kv:namespace create PG_KV --preview
-```
+1. Log in to [dash.cloudflare.com](https://dash.cloudflare.com).
+2. In the left sidebar, go to **Workers & Pages** → **KV**.
+3. Click **Create a namespace** in the top right.
+4. Enter `PG_KV` as the namespace name.
+5. Click **Add**.
+6. Once created, you will see an **ID** next to the namespace — copy it and save it for the next step.
 
 ---
 
@@ -164,17 +161,17 @@ compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "PG_KV"
-id = "YOUR_KV_NAMESPACE_ID"           # from step 1
-preview_id = "YOUR_PREVIEW_KV_ID"     # from step 1 (preview)
+id = "YOUR_KV_NAMESPACE_ID"     # paste the ID copied from step 1
 ```
 
-Deploy:
+Then deploy:
 
 ```bash
 wrangler deploy
 ```
 
 Your Worker will be live at:
+
 ```
 https://paygate.<your-subdomain>.workers.dev
 ```
@@ -183,22 +180,25 @@ https://paygate.<your-subdomain>.workers.dev
 
 ### 3. Set Environment Variables
 
-The Worker requires two secrets. Set them via Wrangler (never hardcode them):
+The Worker requires two secrets. **Never hardcode these in your source code.** Set them through the Cloudflare Dashboard:
 
-```bash
-# A long random string — used to authorize the Android app
-wrangler secret put API_KEY
-# Paste a strong random key when prompted, e.g.: openssl rand -hex 32
+1. Go to [dash.cloudflare.com](https://dash.cloudflare.com).
+2. Navigate to **Workers & Pages** → **paygate** (your Worker).
+3. Click the **Settings** tab at the top.
+4. Scroll down to the **Variables and Secrets** section.
+5. Click **Add** and create the following two variables:
 
-# A one-time secret used only to set the admin password
-wrangler secret put ADMIN_SECRET
-# Paste any secret string, e.g.: my-setup-secret-2025
-```
+| Variable Name | Type | Value |
+|---|---|---|
+| `API_KEY` | Secret | Any long random string (e.g. generate one with `openssl rand -hex 32`) |
+| `ADMIN_SECRET` | Secret | Any secret string (e.g. `my-setup-secret-2025`) |
+
+After adding each variable, click **Deploy** or **Save** to apply the changes.
 
 | Variable | Purpose |
 |---|---|
 | `API_KEY` | Authenticates requests from the Android SMS Forwarder app and your backend |
-| `ADMIN_SECRET` | One-time secret for the `/setup` endpoint to initialize the admin password |
+| `ADMIN_SECRET` | Used once at the `/setup` endpoint to initialize the admin password |
 
 ---
 
@@ -211,7 +211,7 @@ https://paygate.<your-subdomain>.workers.dev/setup?secret=YOUR_ADMIN_SECRET&pass
 ```
 
 - Replace `YOUR_ADMIN_SECRET` with the value you set in step 3.
-- Replace `YOUR_ADMIN_PASSWORD` with your desired admin password (min 8 characters).
+- Replace `YOUR_ADMIN_PASSWORD` with your desired admin password (minimum 8 characters).
 
 A successful response looks like:
 
@@ -392,7 +392,7 @@ Minimum Android version: **5.0 (API 21)**
    https://paygate.<your-subdomain>.workers.dev
    ```
 
-3. Enter your **API Key** — the same value you set as `API_KEY` in Wrangler secrets.
+3. Enter your **API Key** — the same value you set as `API_KEY` in step 3.
 
 4. Tap **Save & Continue**.
 
@@ -542,7 +542,7 @@ GET /api/transaction/DDS3M42DR5
 Public payment page for customers. No API key required.
 
 ```
-GET /pay/abc123def4        → fixed price payment page
+GET /pay/abc123def4             → fixed price payment page
 GET /pay/abc123def4?amount=500  → open price, pre-filled with 500
 ```
 
@@ -645,12 +645,12 @@ The Android app requests the following permissions:
 **Worker returns 401 Unauthorized**
 
 - The `X-API-Key` header value does not match the `API_KEY` secret on the Worker.
-- Re-check with `wrangler secret list` and update the app's API Key in Settings.
+- Go to the Cloudflare Dashboard → your Worker → **Settings → Variables and Secrets**, verify the `API_KEY` value, and update it in the app's Settings if needed.
 
 **TrxID parse fails (SMS saved but no transaction created)**
 
 - Check the raw SMS text in the Admin SMS Log.
-- The parser expects the keyword `TrxID` followed by the transaction ID (e.g., `TrxID DDS3M42DR5`).
+- The parser expects the keyword `TrxID` followed by the transaction ID (e.g. `TrxID DDS3M42DR5`).
 - If bKash changes their SMS format, use **Manual SMS Entry** as a workaround and open a GitHub issue.
 
 **Payment verification says "Transaction not found"**
@@ -662,8 +662,8 @@ The Android app requests the following permissions:
 **Service stops working after a while**
 
 - Battery optimization is the most common cause on Android 8+.
-- Path: **Settings → Apps → PayGate SMS → Battery → Unrestricted**.
-- On some Samsung devices, also disable **Sleeping apps** and **Deep sleeping apps** lists.
+- Go to **Settings → Apps → PayGate SMS → Battery → Unrestricted**.
+- On some Samsung devices, also remove the app from the **Sleeping apps** and **Deep sleeping apps** lists.
 
 **Build fails: `flutter doctor` errors**
 
