@@ -49,7 +49,7 @@ class SmsPollingService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIF_ID, buildNotification("SMS Forwarding চলছে..."))
+        startForeground(NOTIF_ID, buildNotification("SMS Forwarding is running..."))
         Log.d(TAG, "Service created")
     }
 
@@ -144,9 +144,9 @@ class SmsPollingService : Service() {
         }
 
         val notifText = if (forwarded > 0)
-            "✅ $forwarded টি নতুন SMS forward করা হয়েছে"
+            "✅ $forwarded new SMS(s) forwarded successfully"
         else
-            "SMS Forwarding চলছে... (প্রতি ১৫ সেকেন্ডে check)"
+            "SMS Forwarding is running... (checking every 15 seconds)"
 
         updateNotification(notifText)
         Log.d(TAG, "Poll done — forwarded: $forwarded")
