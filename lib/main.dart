@@ -466,7 +466,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Switch(
                             value: _enabled,
                             onChanged: (_) => _toggleEnabled(),
-                            activeColor: kGreen,
+                            activeThumbColor: kGreen,
                             activeTrackColor: const Color(0xFF0D2A14),
                             inactiveThumbColor: kMuted,
                             inactiveTrackColor: kSurface,
@@ -580,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           Icon(Icons.info_outline, color: color, size: 16),
           const SizedBox(width: 10),
           Expanded(child: Text(msg, style: TextStyle(fontSize: 13, color: color))),
-          if (action != null) action,
+          ?action,
         ],
       ),
     );
