@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 
-const MethodChannel _smsChannel = MethodChannel('com.example.paygate/sms');
+const MethodChannel _smsChannel = MethodChannel('com.paygate.f/sms');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const String kWorkerUrl    = 'worker_url';
@@ -771,7 +771,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             const SizedBox(height: 24),
             const Center(
-              child: Text('PayGate SMS Forwarder v1.0.0',
+              child: Text('PayGate SMS Forwarder v1.0.1',
                   style: TextStyle(fontSize: 11, color: kMuted)),
             ),
           ],
