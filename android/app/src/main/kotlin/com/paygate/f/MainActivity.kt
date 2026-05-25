@@ -1,4 +1,4 @@
-package com.example.paygate
+package com.paygate.f
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -9,7 +9,7 @@ import io.flutter.plugin.common.MethodChannel
 import androidx.core.app.ActivityCompat
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.example.paygate/sms"
+    private val CHANNEL = "com.paygate.f/sms"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

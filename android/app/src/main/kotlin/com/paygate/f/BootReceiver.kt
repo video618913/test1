@@ -1,4 +1,4 @@
-package com.example.paygate
+package com.paygate.f
 
 import android.content.BroadcastReceiver
 import android.content.Context

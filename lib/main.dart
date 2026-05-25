@@ -6,24 +6,24 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:async';
 
-const MethodChannel _smsChannel = MethodChannel('com.example.paygate/sms');
+const MethodChannel _smsChannel = MethodChannel('com.paygate.f/sms');
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const String kWorkerUrl = 'worker_url';
-const String kApiKey = 'api_key';
-const String kEnabled = 'sms_forward_enabled';
+const String kWorkerUrl    = 'worker_url';
+const String kApiKey       = 'api_key';
+const String kEnabled      = 'sms_forward_enabled';
 const String kForwardCount = 'forward_count';
-const String kLastLog = 'last_log';
-const String kSetupDone = 'setup_done';
+const String kLastLog      = 'last_log';
+const String kSetupDone    = 'setup_done';
 
+const Color kBg      = Color(0xFF0A0A0A);
+const Color kSurface = Color(0xFF141414);
+const Color kBorder  = Color(0xFF242424);
+const Color kMuted   = Color(0xFF555555);
+const Color kText    = Color(0xFFE8E8E8);
 const Color kPrimary = Color(0xFFE2136E);
-const Color kBg = Color(0xFF0F0F0F);
-const Color kCard = Color(0xFF1A1A1A);
-const Color kBorder = Color(0xFF2A2A2A);
-const Color kMuted = Color(0xFF888888);
-const Color kSuccess = Color(0xFF22C55E);
-const Color kDanger = Color(0xFFEF4444);
-const Color kWarning = Color(0xFFF59E0B);
+const Color kGreen   = Color(0xFF22C55E);
+const Color kRed     = Color(0xFFEF4444);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,11 +32,9 @@ void main() async {
     statusBarIconBrightness: Brightness.light,
   ));
   final prefs = await SharedPreferences.getInstance();
-  final setupDone = prefs.getBool(kSetupDone) ?? false;
-  runApp(PayGateApp(setupDone: setupDone));
+  runApp(PayGateApp(setupDone: prefs.getBool(kSetupDone) ?? false));
 }
 
-// ─── App Root ─────────────────────────────────────────────────────────────────
 class PayGateApp extends StatelessWidget {
   final bool setupDone;
   const PayGateApp({super.key, required this.setupDone});
@@ -44,17 +42,95 @@ class PayGateApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PayGate SMS',
+      title: 'PayGate',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: kBg,
-        fontFamily: 'sans-serif',
-        colorScheme: const ColorScheme.dark(primary: kPrimary, surface: kCard),
+        colorScheme: const ColorScheme.dark(primary: kPrimary, surface: kSurface),
       ),
       home: setupDone ? const HomeScreen() : const SetupScreen(),
     );
   }
+}
+
+// ─── Shared Widgets ───────────────────────────────────────────────────────────
+class _Field extends StatelessWidget {
+  final TextEditingController ctrl;
+  final String label;
+  final String hint;
+  final bool obscure;
+  final TextInputType? keyboard;
+
+  const _Field({
+    required this.ctrl,
+    required this.label,
+    required this.hint,
+    this.obscure = false,
+    this.keyboard,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 11, color: kMuted, letterSpacing: 0.8)),
+        const SizedBox(height: 6),
+        TextField(
+          controller: ctrl,
+          obscureText: obscure,
+          keyboardType: keyboard,
+          style: const TextStyle(color: kText, fontSize: 14),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: const TextStyle(color: kMuted, fontSize: 13),
+            filled: true,
+            fillColor: kSurface,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: kBorder),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: kBorder),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: kPrimary),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+Widget _btn(String label, VoidCallback? onTap, {bool outline = false, bool danger = false}) {
+  final color = danger ? kRed : kPrimary;
+  return SizedBox(
+    width: double.infinity,
+    height: 46,
+    child: outline
+        ? OutlinedButton(
+            onPressed: onTap,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: color,
+              side: BorderSide(color: color),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text(label, style: const TextStyle(fontSize: 14)),
+          )
+        : ElevatedButton(
+            onPressed: onTap,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: color,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: Text(label, style: const TextStyle(fontSize: 14, color: Colors.white)),
+          ),
+  );
 }
 
 // ─── Setup Screen ─────────────────────────────────────────────────────────────
@@ -68,25 +144,21 @@ class _SetupScreenState extends State<SetupScreen> {
   final _urlCtrl = TextEditingController();
   final _keyCtrl = TextEditingController();
   bool _testing = false;
-  bool _saving = false;
-  String _testResult = '';
-  bool _testSuccess = false;
+  bool _saving  = false;
+  String _testMsg = '';
+  bool _testOk  = false;
 
   @override
-  void dispose() {
-    _urlCtrl.dispose();
-    _keyCtrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _urlCtrl.dispose(); _keyCtrl.dispose(); super.dispose(); }
 
-  Future<void> _testConnection() async {
+  Future<void> _test() async {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
     if (url.isEmpty || key.isEmpty) {
-      setState(() { _testResult = 'Worker URL এবং API Key দিন।'; _testSuccess = false; });
+      setState(() { _testMsg = 'Enter URL and API key first.'; _testOk = false; });
       return;
     }
-    setState(() { _testing = true; _testResult = ''; });
+    setState(() { _testing = true; _testMsg = ''; });
     try {
       final res = await http.post(
         Uri.parse('${url.trimRight()}/api/sms/forward'),
@@ -98,30 +170,29 @@ class _SetupScreenState extends State<SetupScreen> {
         }),
       ).timeout(const Duration(seconds: 15));
 
-      if (res.statusCode == 200 || res.statusCode == 201) {
-        setState(() { _testResult = '✅ সংযোগ সফল! Worker সঠিকভাবে কাজ করছে।'; _testSuccess = true; });
-      } else if (res.statusCode == 401) {
-        setState(() { _testResult = '❌ API Key ভুল।'; _testSuccess = false; });
-      } else {
-        setState(() { _testResult = '⚠️ Server response: ${res.statusCode}'; _testSuccess = false; });
-      }
+      final ok = res.statusCode >= 200 && res.statusCode < 300;
+      setState(() {
+        _testOk  = ok;
+        _testMsg = ok ? 'Connection successful.' : 'HTTP ${res.statusCode}';
+      });
     } on TimeoutException {
-      setState(() { _testResult = '❌ Timeout। URL চেক করুন।'; _testSuccess = false; });
+      setState(() { _testMsg = 'Request timed out.'; _testOk = false; });
     } catch (e) {
-      setState(() { _testResult = '❌ Error: ${e.toString().substring(0, e.toString().length.clamp(0, 80))}'; _testSuccess = false; });
+      setState(() { _testMsg = 'Error: $e'; _testOk = false; });
     }
     setState(() => _testing = false);
   }
 
-  Future<void> _saveAndContinue() async {
+  Future<void> _save() async {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
-    if (url.isEmpty) { _showSnack('Worker URL দিন'); return; }
-    if (key.isEmpty) { _showSnack('API Key দিন'); return; }
-    if (!url.startsWith('http')) { _showSnack('URL https:// দিয়ে শুরু হওয়া উচিত'); return; }
-
+    if (url.isEmpty) { _snack('Enter Worker URL'); return; }
+    if (key.isEmpty) { _snack('Enter API Key'); return; }
+    if (!url.startsWith('http')) { _snack('URL must start with https://'); return; }
     setState(() => _saving = true);
-    await _requestPermissions();
+
+    try { await _smsChannel.invokeMethod('requestSmsPermission'); } catch (_) {}
+    await Permission.notification.request();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(kWorkerUrl, url);
@@ -129,190 +200,88 @@ class _SetupScreenState extends State<SetupScreen> {
     await prefs.setBool(kEnabled, true);
     await prefs.setBool(kSetupDone, true);
 
-    // Foreground Service চালু করো
     try { await _smsChannel.invokeMethod('startService'); } catch (_) {}
 
     if (mounted) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-      );
+      Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const HomeScreen()));
     }
   }
 
-  Future<void> _requestPermissions() async {
-    try { await _smsChannel.invokeMethod('requestSmsPermission'); } catch (_) {}
-    await Permission.notification.request();
-  }
-
-  void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: kDanger),
-    );
-  }
+  void _snack(String msg) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg), backgroundColor: kRed));
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(color: kPrimary, borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.bolt, color: Colors.white, size: 28),
-                  ),
-                  const SizedBox(width: 14),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('PayGate SMS', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white)),
-                      Text('bKash SMS Forwarder', style: TextStyle(fontSize: 13, color: kMuted)),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-              _infoCard(
-                icon: Icons.info_outline, color: kPrimary,
-                title: 'প্রথমবার Setup',
-                body: 'এই app আপনার bKash SMS গুলো স্বয়ংক্রিয়ভাবে আপনার Cloudflare Worker-এ forward করবে।',
+              // Logo
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: kPrimary, borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.bolt, color: Colors.white, size: 22),
               ),
               const SizedBox(height: 20),
-              _label('Worker URL'),
-              _textField(controller: _urlCtrl, hint: 'https://your-worker.workers.dev', icon: Icons.link, keyboard: TextInputType.url),
+              const Text('Setup', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w700, color: kText)),
+              const SizedBox(height: 6),
+              const Text('Connect your Cloudflare Worker to start forwarding bKash SMS.',
+                  style: TextStyle(fontSize: 14, color: kMuted, height: 1.5)),
+              const SizedBox(height: 36),
+
+              _Field(ctrl: _urlCtrl, label: 'WORKER URL', hint: 'https://your-worker.workers.dev',
+                  keyboard: TextInputType.url),
               const SizedBox(height: 16),
-              _label('API Key'),
-              _textField(controller: _keyCtrl, hint: 'আপনার Worker এর API Key', icon: Icons.key, obscure: true),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _testing ? null : _testConnection,
-                  icon: _testing
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary))
-                      : const Icon(Icons.wifi_tethering, size: 18),
-                  label: Text(_testing ? 'Testing...' : 'Connection Test করুন'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: kPrimary, side: const BorderSide(color: kPrimary),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-              ),
-              if (_testResult.isNotEmpty) ...[
-                const SizedBox(height: 12),
+              _Field(ctrl: _keyCtrl, label: 'API KEY', hint: 'Paste your API key', obscure: true),
+              const SizedBox(height: 24),
+
+              // Test result
+              if (_testMsg.isNotEmpty) ...[
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: _testSuccess ? const Color(0xFF0F2D1A) : const Color(0xFF2D1212),
+                    color: _testOk ? const Color(0xFF0D1F12) : const Color(0xFF1F0D0D),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _testSuccess ? kSuccess : kDanger),
+                    border: Border.all(color: _testOk ? const Color(0xFF1E4D2A) : const Color(0xFF4D1E1E)),
                   ),
-                  child: Text(_testResult, style: TextStyle(fontSize: 13, color: _testSuccess ? kSuccess : const Color(0xFFFCA5A5))),
+                  child: Text(_testMsg,
+                      style: TextStyle(fontSize: 13, color: _testOk ? kGreen : kRed)),
                 ),
               ],
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _saving ? null : _saveAndContinue,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimary,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                  child: _saving
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Save করুন ও শুরু করুন →', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
-                ),
-              ),
-              const SizedBox(height: 32),
-              _sectionTitle('কীভাবে কাজ করে?'),
+
+              _btn(_testing ? 'Testing…' : 'Test Connection', _testing ? null : _test, outline: true),
+              const SizedBox(height: 10),
+              _btn(_saving ? 'Saving…' : 'Save & Continue', _saving ? null : _save),
+
+              const SizedBox(height: 40),
+              const Divider(color: kBorder),
+              const SizedBox(height: 20),
+
+              const Text('How it works', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: kText)),
               const SizedBox(height: 12),
-              _stepCard('১', 'bKash থেকে SMS আসলে instantly forward হয়'),
-              _stepCard('২', 'Background এ প্রতি ১৫ সেকেন্ডে SMS inbox check করে'),
-              _stepCard('৩', 'Notification bar এ সবসময় status দেখা যায়'),
-              _stepCard('৪', 'Phone restart হলেও স্বয়ংক্রিয়ভাবে চালু হয়'),
+              ...[
+                'Forwards bKash SMS instantly when received',
+                'Polls SMS inbox every 15 seconds as backup',
+                'Runs in background, visible in notification bar',
+                'Restarts automatically after phone reboot',
+              ].map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('—  ', style: TextStyle(color: kMuted, fontSize: 13)),
+                    Expanded(child: Text(s, style: const TextStyle(color: kMuted, fontSize: 13, height: 1.4))),
+                  ],
+                ),
+              )),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _label(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(text, style: const TextStyle(fontSize: 13, color: kMuted, fontWeight: FontWeight.w500)),
-  );
-
-  Widget _textField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    TextInputType? keyboard,
-    bool obscure = false,
-  }) {
-    return TextField(
-      controller: controller,
-      keyboardType: keyboard,
-      obscureText: obscure,
-      style: const TextStyle(color: Colors.white, fontSize: 14),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: kMuted, fontSize: 13),
-        prefixIcon: Icon(icon, color: kMuted, size: 20),
-        filled: true, fillColor: const Color(0xFF111111),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kBorder)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kBorder)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: kPrimary)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      ),
-    );
-  }
-
-  Widget _infoCard({required IconData icon, required Color color, required String title, required String body}) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: kBorder)),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 12),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
-              const SizedBox(height: 4),
-              Text(body, style: const TextStyle(fontSize: 13, color: kMuted, height: 1.6)),
-            ],
-          )),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionTitle(String text) => Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white));
-
-  Widget _stepCard(String num, String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(color: kPrimary, borderRadius: BorderRadius.circular(14)),
-            child: Center(child: Text(num, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white))),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: kMuted, height: 1.5))),
-        ],
       ),
     );
   }
@@ -326,72 +295,68 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
-  String _workerUrl = '';
-  String _apiKey = '';
-  bool _enabled = true;
-  int _forwardCount = 0;
-  String _lastLog = '';
-  bool _hasPerms = false;
-  Timer? _refreshTimer;
+  String _workerUrl    = '';
+  String _apiKey       = '';
+  bool   _enabled      = true;
+  int    _forwardCount = 0;
+  String _lastLog      = '';
+  bool   _hasPerms     = false;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _loadPrefs();
-    _checkPermissions();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 3), (_) => _loadPrefs());
-    // Service চালু করো
+    _load();
+    _checkPerms();
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _load());
     _startService();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _refreshTimer?.cancel();
+    _timer?.cancel();
     super.dispose();
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      // App background এ গেলে service নিশ্চিত করো
-      _startService();
-    }
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.paused || s == AppLifecycleState.detached) _startService();
   }
 
   Future<void> _startService() async {
     try { await _smsChannel.invokeMethod('startService'); } catch (_) {}
   }
 
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      _workerUrl = prefs.getString(kWorkerUrl) ?? '';
-      _apiKey = prefs.getString(kApiKey) ?? '';
-      _enabled = prefs.getBool(kEnabled) ?? true;
-      _forwardCount = prefs.getInt(kForwardCount) ?? 0;
-      _lastLog = prefs.getString(kLastLog) ?? 'কোনো activity নেই';
+      _workerUrl    = p.getString(kWorkerUrl) ?? '';
+      _apiKey       = p.getString(kApiKey) ?? '';
+      _enabled      = p.getBool(kEnabled) ?? true;
+      _forwardCount = p.getInt(kForwardCount) ?? 0;
+      _lastLog      = p.getString(kLastLog) ?? '—';
     });
   }
 
-  Future<void> _checkPermissions() async {
+  Future<void> _checkPerms() async {
     try {
-      final granted = await _smsChannel.invokeMethod<bool>('hasSmsPermission') ?? false;
-      if (mounted) setState(() => _hasPerms = granted);
+      final ok = await _smsChannel.invokeMethod<bool>('hasSmsPermission') ?? false;
+      if (mounted) setState(() => _hasPerms = ok);
     } catch (_) {
-      final sms = await Permission.sms.status;
-      if (mounted) setState(() => _hasPerms = sms.isGranted);
+      final s = await Permission.sms.status;
+      if (mounted) setState(() => _hasPerms = s.isGranted);
     }
   }
 
   Future<void> _toggleEnabled() async {
-    final prefs = await SharedPreferences.getInstance();
-    final newVal = !_enabled;
-    await prefs.setBool(kEnabled, newVal);
-    setState(() => _enabled = newVal);
-    if (newVal) {
+    final p = await SharedPreferences.getInstance();
+    final next = !_enabled;
+    await p.setBool(kEnabled, next);
+    setState(() => _enabled = next);
+    if (next) {
       _startService();
     } else {
       try { await _smsChannel.invokeMethod('stopService'); } catch (_) {}
@@ -404,41 +369,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     await Permission.notification.request();
     await Future.delayed(const Duration(seconds: 1));
-    await _checkPermissions();
-  }
-
-  void _openSettings() {
-    Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()))
-        .then((_) => _loadPrefs());
+    await _checkPerms();
   }
 
   @override
   Widget build(BuildContext context) {
+    final active = _enabled && _hasPerms;
+
     return Scaffold(
       body: SafeArea(
         child: Column(
           children: [
             // Top bar
-            Container(
+            Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: const BoxDecoration(
-                color: Color(0xFF111111),
-                border: Border(bottom: BorderSide(color: kBorder)),
-              ),
               child: Row(
                 children: [
                   Container(
-                    width: 36, height: 36,
+                    width: 32, height: 32,
                     decoration: BoxDecoration(color: kPrimary, borderRadius: BorderRadius.circular(8)),
-                    child: const Icon(Icons.bolt, color: Colors.white, size: 20),
+                    child: const Icon(Icons.bolt, color: Colors.white, size: 18),
                   ),
                   const SizedBox(width: 10),
-                  const Text('PayGate SMS', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white)),
+                  const Text('PayGate', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: kText)),
                   const Spacer(),
-                  IconButton(onPressed: _openSettings, icon: const Icon(Icons.settings, color: kMuted)),
+                  GestureDetector(
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()))
+                        .then((_) => _load()),
+                    child: const Icon(Icons.settings_outlined, color: kMuted, size: 22),
+                  ),
                 ],
               ),
             ),
+            const Divider(height: 1, color: kBorder),
 
             Expanded(
               child: SingleChildScrollView(
@@ -446,64 +409,55 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+
                     // Permission warning
                     if (!_hasPerms) ...[
-                      _alertCard(
-                        color: kDanger, bgColor: const Color(0xFF2D1212),
-                        icon: Icons.warning_amber,
-                        title: 'SMS Permission নেই!',
-                        body: 'SMS forward করতে permission দিতে হবে।',
-                        action: TextButton(
-                          onPressed: _requestPerms,
-                          child: const Text('Permission দিন', style: TextStyle(color: kDanger, fontWeight: FontWeight.w600)),
+                      _notice(
+                        'SMS permission required.',
+                        action: GestureDetector(
+                          onTap: _requestPerms,
+                          child: const Text('Grant →', style: TextStyle(color: kRed, fontSize: 13, fontWeight: FontWeight.w600)),
                         ),
+                        color: kRed,
                       ),
                       const SizedBox(height: 16),
                     ],
 
-                    // Status card
+                    // Status row
                     Container(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: _enabled && _hasPerms
-                              ? [const Color(0xFF0F2D1A), const Color(0xFF1A4A2A)]
-                              : [const Color(0xFF1A1A1A), const Color(0xFF222222)],
-                          begin: Alignment.topLeft, end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: _enabled && _hasPerms ? kSuccess.withValues(alpha: 0.4) : kBorder),
+                        color: kSurface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: kBorder),
                       ),
                       child: Row(
                         children: [
                           Container(
-                            width: 52, height: 52,
+                            width: 8, height: 8,
                             decoration: BoxDecoration(
-                              color: (_enabled && _hasPerms ? kSuccess : kMuted).withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(26),
-                            ),
-                            child: Icon(
-                              _enabled && _hasPerms ? Icons.sms : Icons.sms_failed,
-                              color: _enabled && _hasPerms ? kSuccess : kMuted, size: 26,
+                              color: active ? kGreen : kMuted,
+                              shape: BoxShape.circle,
                             ),
                           ),
-                          const SizedBox(width: 14),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _enabled && _hasPerms ? 'SMS Forwarding Active' : 'SMS Forwarding Inactive',
+                                  active ? 'Forwarding active' : 'Forwarding inactive',
                                   style: TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w700,
-                                    color: _enabled && _hasPerms ? kSuccess : kMuted,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: active ? kGreen : kMuted,
                                   ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  _enabled && _hasPerms
-                                      ? 'Notification চলছে • প্রতি ১৫ সেকেন্ডে check'
-                                      : _hasPerms ? 'Toggle করে চালু করুন' : 'SMS permission দিন',
+                                  active
+                                    ? 'Running · checks every 15s'
+                                    : _hasPerms ? 'Toggle to enable' : 'SMS permission needed',
                                   style: const TextStyle(fontSize: 12, color: kMuted),
                                 ),
                               ],
@@ -512,94 +466,65 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           Switch(
                             value: _enabled,
                             onChanged: (_) => _toggleEnabled(),
-                            activeThumbColor: kSuccess,
-                            activeTrackColor: kSuccess.withValues(alpha: 0.3),
+                            activeThumbColor: kGreen,
+                            activeTrackColor: const Color(0xFF0D2A14),
+                            inactiveThumbColor: kMuted,
+                            inactiveTrackColor: kSurface,
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
-                    // Stats
+                    // Stats row
                     Row(
                       children: [
-                        Expanded(child: _statCard('Forwarded', '$_forwardCount', Icons.send, kPrimary)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _statCard('Permission', _hasPerms ? 'Granted' : 'Denied',
-                            _hasPerms ? Icons.check_circle : Icons.cancel, _hasPerms ? kSuccess : kDanger)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _statCard('Service', _enabled ? 'Running' : 'Stopped',
-                            _enabled ? Icons.circle : Icons.pause_circle, _enabled ? kSuccess : kWarning)),
+                        _stat('Forwarded', '$_forwardCount'),
+                        const SizedBox(width: 10),
+                        _stat('Permission', _hasPerms ? 'Granted' : 'Denied'),
+                        const SizedBox(width: 10),
+                        _stat('Service', _enabled ? 'On' : 'Off'),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
-                    // Service info card
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0F1E2D),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFF3B82F6).withValues(alpha: 0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.notifications_active, color: Color(0xFF60A5FA), size: 20),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text(
-                              'Background Service চলছে। Notification bar এ সবসময় দেখা যাবে। প্রতি ১৫ সেকেন্ডে SMS inbox check করে।',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF93C5FD), height: 1.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Last log
-                    _sectionTitle('Last Activity'),
+                    // Last activity
+                    const Text('Last activity', style: TextStyle(fontSize: 11, color: kMuted, letterSpacing: 0.8)),
                     const SizedBox(height: 8),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF111111),
-                        borderRadius: BorderRadius.circular(10),
+                        color: kSurface,
+                        borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: kBorder),
                       ),
                       child: Text(_lastLog,
-                        style: const TextStyle(fontSize: 13, color: kMuted, fontFamily: 'monospace', height: 1.5)),
+                          style: const TextStyle(fontSize: 12, color: kMuted, fontFamily: 'monospace', height: 1.5)),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
                     // Config
-                    _sectionTitle('Current Config'),
+                    const Text('Configuration', style: TextStyle(fontSize: 11, color: kMuted, letterSpacing: 0.8)),
                     const SizedBox(height: 8),
                     Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: kBorder)),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: kSurface,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: kBorder),
+                      ),
                       child: Column(
                         children: [
-                          _configRow('Worker URL', _workerUrl.isEmpty ? 'Not set' : _workerUrl),
-                          const Divider(color: kBorder, height: 20),
-                          _configRow('API Key', _apiKey.isEmpty ? 'Not set' : '${_apiKey.substring(0, _apiKey.length.clamp(0, 6))}••••••'),
+                          _cfgRow('URL', _workerUrl.isEmpty ? 'Not set' : _workerUrl),
+                          const SizedBox(height: 10),
+                          const Divider(color: kBorder, height: 1),
+                          const SizedBox(height: 10),
+                          _cfgRow('Key',
+                            _apiKey.isEmpty
+                              ? 'Not set'
+                              : '${_apiKey.substring(0, _apiKey.length.clamp(0, 6))}••••••'),
                         ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _openSettings,
-                        icon: const Icon(Icons.tune, size: 18),
-                        label: const Text('Settings খুলুন'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: kPrimary, side: const BorderSide(color: kPrimary),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
                       ),
                     ),
                   ],
@@ -612,49 +537,50 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 
-  Widget _sectionTitle(String t) => Text(t, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white));
-
-  Widget _statCard(String label, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(10), border: Border.all(color: kBorder)),
-      child: Column(children: [
-        Icon(icon, color: color, size: 22),
-        const SizedBox(height: 6),
-        Text(value, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: color)),
-        const SizedBox(height: 2),
-        Text(label, style: const TextStyle(fontSize: 11, color: kMuted)),
-      ]),
+  Widget _stat(String label, String val) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(8), border: Border.all(color: kBorder)),
+        child: Column(
+          children: [
+            Text(val, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kText)),
+            const SizedBox(height: 2),
+            Text(label, style: const TextStyle(fontSize: 11, color: kMuted)),
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _configRow(String label, String value) {
+  Widget _cfgRow(String label, String val) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 90, child: Text(label, style: const TextStyle(fontSize: 13, color: kMuted))),
-        Expanded(child: Text(value, style: const TextStyle(fontSize: 13, color: Colors.white), overflow: TextOverflow.ellipsis, maxLines: 2)),
+        SizedBox(width: 36, child: Text(label, style: const TextStyle(fontSize: 12, color: kMuted))),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(val,
+              style: const TextStyle(fontSize: 12, color: kText),
+              overflow: TextOverflow.ellipsis, maxLines: 1),
+        ),
       ],
     );
   }
 
-  Widget _alertCard({required Color color, required Color bgColor, required IconData icon, required String title, required String body, Widget? action}) {
+  Widget _notice(String msg, {Widget? action, required Color color}) {
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(10), border: Border.all(color: color.withValues(alpha: 0.5))),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: kSurface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 20),
+          Icon(Icons.info_outline, color: color, size: 16),
           const SizedBox(width: 10),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: color, fontSize: 13)),
-              Text(body, style: const TextStyle(fontSize: 12, color: kMuted)),
-              ?action,
-            ],
-          )),
+          Expanded(child: Text(msg, style: TextStyle(fontSize: 13, color: color))),
+          ?action,
         ],
       ),
     );
@@ -671,79 +597,86 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final _urlCtrl = TextEditingController();
   final _keyCtrl = TextEditingController();
-  bool _saved = false;
-  bool _testing = false;
-  String _testResult = '';
-  bool _testSuccess = false;
+  bool _saved    = false;
+  bool _testing  = false;
+  String _testMsg = '';
+  bool _testOk   = false;
 
   @override
-  void initState() { super.initState(); _loadPrefs(); }
+  void initState() { super.initState(); _load(); }
 
   @override
   void dispose() { _urlCtrl.dispose(); _keyCtrl.dispose(); super.dispose(); }
 
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    _urlCtrl.text = prefs.getString(kWorkerUrl) ?? '';
-    _keyCtrl.text = prefs.getString(kApiKey) ?? '';
+  Future<void> _load() async {
+    final p = await SharedPreferences.getInstance();
+    _urlCtrl.text = p.getString(kWorkerUrl) ?? '';
+    _keyCtrl.text = p.getString(kApiKey) ?? '';
   }
 
   Future<void> _save() async {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
     if (url.isEmpty || key.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('URL এবং API Key দিন'), backgroundColor: kDanger));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter URL and API Key'), backgroundColor: kRed));
       return;
     }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(kWorkerUrl, url);
-    await prefs.setString(kApiKey, key);
+    final p = await SharedPreferences.getInstance();
+    await p.setString(kWorkerUrl, url);
+    await p.setString(kApiKey, key);
     setState(() => _saved = true);
     Future.delayed(const Duration(seconds: 2), () { if (mounted) setState(() => _saved = false); });
   }
 
-  Future<void> _testConnection() async {
+  Future<void> _test() async {
     final url = _urlCtrl.text.trim();
     final key = _keyCtrl.text.trim();
-    if (url.isEmpty || key.isEmpty) { setState(() { _testResult = 'URL এবং API Key দিন।'; _testSuccess = false; }); return; }
-    setState(() { _testing = true; _testResult = ''; });
+    if (url.isEmpty || key.isEmpty) {
+      setState(() { _testMsg = 'Enter URL and API key first.'; _testOk = false; });
+      return;
+    }
+    setState(() { _testing = true; _testMsg = ''; });
     try {
       final res = await http.post(
         Uri.parse('${url.trimRight()}/api/sms/forward'),
         headers: {'Content-Type': 'application/json', 'X-API-Key': key},
-        body: jsonEncode({'sender': '01700000000', 'message': 'You have received Tk 10.00 from 01700000000. TrxID TESTCONN01. Balance Tk 100.00.', 'receivedAt': DateTime.now().toUtc().toIso8601String()}),
+        body: jsonEncode({
+          'sender': '01700000000',
+          'message': 'You have received Tk 10.00 from 01700000000. TrxID TESTCONN01. Balance Tk 100.00.',
+          'receivedAt': DateTime.now().toUtc().toIso8601String(),
+        }),
       ).timeout(const Duration(seconds: 15));
-      setState(() {
-        _testSuccess = res.statusCode >= 200 && res.statusCode < 300;
-        _testResult = _testSuccess ? '✅ সংযোগ সফল! (HTTP ${res.statusCode})' : '❌ HTTP ${res.statusCode}';
-      });
+      final ok = res.statusCode >= 200 && res.statusCode < 300;
+      setState(() { _testOk = ok; _testMsg = ok ? 'Connection successful.' : 'HTTP ${res.statusCode}'; });
     } catch (e) {
-      setState(() { _testResult = '❌ Error: ${e.toString().substring(0, e.toString().length.clamp(0, 80))}'; _testSuccess = false; });
+      setState(() { _testMsg = 'Error: $e'; _testOk = false; });
     }
     setState(() => _testing = false);
   }
 
-  Future<void> _resetApp() async {
-    final confirm = await showDialog<bool>(
+  Future<void> _reset() async {
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kCard,
-        title: const Text('Reset করবেন?', style: TextStyle(color: Colors.white)),
-        content: const Text('সব settings মুছে setup screen-এ যাবে।', style: TextStyle(color: kMuted)),
+        backgroundColor: kSurface,
+        title: const Text('Reset app?', style: TextStyle(color: kText, fontSize: 16)),
+        content: const Text('All settings will be cleared.', style: TextStyle(color: kMuted, fontSize: 14)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('না')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('হ্যাঁ, Reset', style: TextStyle(color: kDanger))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Reset', style: TextStyle(color: kRed))),
         ],
       ),
     );
-    if (confirm == true) {
+    if (ok == true) {
       try { await _smsChannel.invokeMethod('stopService'); } catch (_) {}
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
+      final p = await SharedPreferences.getInstance();
+      await p.clear();
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const SetupScreen()), (_) => false,
-        );
+            MaterialPageRoute(builder: (_) => const SetupScreen()), (_) => false);
       }
     }
   }
@@ -752,9 +685,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF111111),
-        title: const Text('Settings', style: TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600)),
-        leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => Navigator.pop(context)),
+        backgroundColor: kBg,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: kText, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text('Settings', style: TextStyle(color: kText, fontSize: 15, fontWeight: FontWeight.w600)),
         bottom: const PreferredSize(preferredSize: Size.fromHeight(1), child: Divider(height: 1, color: kBorder)),
       ),
       body: SingleChildScrollView(
@@ -762,92 +699,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_saved)
+
+            if (_saved) ...[
               Container(
-                width: double.infinity, padding: const EdgeInsets.all(12), margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(color: const Color(0xFF0F2D1A), borderRadius: BorderRadius.circular(8), border: Border.all(color: kSuccess.withValues(alpha: 0.5))),
-                child: const Text('✅ Settings save হয়েছে!', style: TextStyle(color: kSuccess, fontSize: 13)),
-              ),
-            const Text('Worker Configuration', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: kCard, borderRadius: BorderRadius.circular(12), border: Border.all(color: kBorder)),
-              child: Column(children: [
-                _settingsField('Worker URL', _urlCtrl, 'https://your-worker.workers.dev', Icons.link),
-                const SizedBox(height: 14),
-                _settingsField('API Key', _keyCtrl, 'আপনার API Key', Icons.key, obscure: true),
-              ]),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _testing ? null : _testConnection,
-                    icon: _testing ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: kPrimary)) : const Icon(Icons.wifi_tethering, size: 16),
-                    label: const Text('Test'),
-                    style: OutlinedButton.styleFrom(foregroundColor: kPrimary, side: const BorderSide(color: kPrimary), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                  ),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0D1F12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFF1E4D2A)),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _save,
-                    icon: const Icon(Icons.save, size: 16, color: Colors.white),
-                    label: const Text('Save', style: TextStyle(color: Colors.white)),
-                    style: ElevatedButton.styleFrom(backgroundColor: kPrimary, padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-                  ),
-                ),
-              ],
-            ),
-            if (_testResult.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: _testSuccess ? const Color(0xFF0F2D1A) : const Color(0xFF2D1212), borderRadius: BorderRadius.circular(8), border: Border.all(color: (_testSuccess ? kSuccess : kDanger).withValues(alpha: 0.5))),
-                child: Text(_testResult, style: TextStyle(fontSize: 12, color: _testSuccess ? kSuccess : const Color(0xFFFCA5A5))),
+                child: const Text('Settings saved.', style: TextStyle(color: kGreen, fontSize: 13)),
               ),
             ],
-            const SizedBox(height: 24),
-            const Divider(color: kBorder),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _resetApp,
-                icon: const Icon(Icons.restore, size: 16),
-                label: const Text('App Reset করুন'),
-                style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: const BorderSide(color: kDanger), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-              ),
-            ),
+
+            _Field(ctrl: _urlCtrl, label: 'WORKER URL', hint: 'https://your-worker.workers.dev',
+                keyboard: TextInputType.url),
+            const SizedBox(height: 14),
+            _Field(ctrl: _keyCtrl, label: 'API KEY', hint: 'Paste your API key', obscure: true),
             const SizedBox(height: 20),
-            const Center(child: Text('PayGate SMS Forwarder v1.0.0', style: TextStyle(fontSize: 11, color: kMuted))),
+
+            if (_testMsg.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: _testOk ? const Color(0xFF0D1F12) : const Color(0xFF1F0D0D),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _testOk ? const Color(0xFF1E4D2A) : const Color(0xFF4D1E1E)),
+                ),
+                child: Text(_testMsg, style: TextStyle(fontSize: 13, color: _testOk ? kGreen : kRed)),
+              ),
+            ],
+
+            Row(
+              children: [
+                Expanded(child: SizedBox(
+                  height: 46,
+                  child: OutlinedButton(
+                    onPressed: _testing ? null : _test,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: kPrimary,
+                      side: const BorderSide(color: kBorder),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: Text(_testing ? 'Testing…' : 'Test', style: const TextStyle(fontSize: 14)),
+                  ),
+                )),
+                const SizedBox(width: 10),
+                Expanded(child: SizedBox(
+                  height: 46,
+                  child: ElevatedButton(
+                    onPressed: _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    child: const Text('Save', style: TextStyle(fontSize: 14, color: Colors.white)),
+                  ),
+                )),
+              ],
+            ),
+
+            const SizedBox(height: 32),
+            const Divider(color: kBorder),
+            const SizedBox(height: 20),
+
+            _btn('Reset App', _reset, outline: true, danger: true),
+
+            const SizedBox(height: 24),
+            const Center(
+              child: Text('PayGate SMS Forwarder v1.0.1',
+                  style: TextStyle(fontSize: 11, color: kMuted)),
+            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _settingsField(String label, TextEditingController ctrl, String hint, IconData icon, {bool obscure = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: kMuted, fontWeight: FontWeight.w500)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: ctrl, obscureText: obscure,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          decoration: InputDecoration(
-            hintText: hint, hintStyle: const TextStyle(color: kMuted, fontSize: 12),
-            prefixIcon: Icon(icon, color: kMuted, size: 18), filled: true, fillColor: const Color(0xFF111111),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: kBorder)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: kBorder)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: kPrimary)),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          ),
-        ),
-      ],
     );
   }
 }
